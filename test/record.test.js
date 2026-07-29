@@ -209,6 +209,37 @@ test('dedup: a genuinely different person gets a different Golden ID', () => {
   store.close();
 });
 
+test('dedup: two different people whose DOBs are unreadable never collapse to one Golden ID', () => {
+  // An identity fingerprint of name + gender alone is no fingerprint at all —
+  // two namesakes must not share a Golden ID just because neither DOB was read.
+  assert.equal(dedupHash({ name: 'RAVI KUMAR', dob: '', gender: 'M' }), null);
+
+  const { store, user, application } = scaffold();
+  const personOne = compareDocuments([
+    document('pan', { holder_name: 'RAVI KUMAR', father_name: 'MOHAN KUMAR' }),
+    document('voter', { holder_name: 'RAVI KUMAR', gender: 'M' })
+  ]);
+  const first = issueRecord(store, {
+    verdict: personOne,
+    documents: [{ type: 'pan', validation: { number: 'AAAPA1111A', valid: true } }],
+    applicationId: application.id, userId: user.id, keyPath: KEY_PATH
+  });
+
+  const personTwo = compareDocuments([
+    document('pan', { holder_name: 'RAVI KUMAR', father_name: 'SURESH NAIR' }),
+    document('voter', { holder_name: 'RAVI KUMAR', gender: 'M' })
+  ]);
+  const second = issueRecord(store, {
+    verdict: personTwo,
+    documents: [{ type: 'pan', validation: { number: 'BBBPB2222B', valid: true } }],
+    applicationId: application.id, userId: user.id, keyPath: KEY_PATH
+  });
+
+  assert.equal(second.issued, true, 'a namesake with different documents is a different person');
+  assert.notEqual(second.gid, first.gid);
+  store.close();
+});
+
 test('dedup: a shared document number returns the existing Golden ID', () => {
   const { store, user, application } = scaffold();
   const first = issueRecord(store, {

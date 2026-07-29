@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Verify Golden ID demo</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/workflow.css"></head><body><header><a class="brand" href="/"><span>◆</span> Golden ID</a><span class="badge">Prototype • Not a government service</span></header><main><section class="hero"><p class="eyebrow">HOLDER-CONTROLLED ACCESS</p><h1>Retrieve a <em>demo card.</em></h1><p class="lead">A share link carries a short-lived, scoped token: the holder chooses which fields it releases and for how long. Every retrieval is written to an audit trail.</p><div class="notice"><strong>Prototype only:</strong> this is not a Government of India credential and no government system was consulted. Verify the signature against <code>/api/v1/.well-known/golden-id-key</code> rather than trusting this page.</div></section><section class="panel"><form id="lookup"><label>Golden ID<input id="id" required placeholder="GID-..."></label><br><label>Share token<input id="token" required placeholder="From the holder's share link"></label><button class="primary">Retrieve card</button></form><div id="result"></div></section></main><script>
 const q = new URLSearchParams(location.search);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const LABELS = { name:'Name', dob:'Date of birth', gender:'Gender', guardian_name:'Father / spouse name', mother_name:"Mother's name", address:'Address' };
+const LABELS = { holder_name:'Name', dob:'Date of birth', gender:'Gender', guardian_name:'Father / spouse name', mother_name:"Mother's name", address:'Address' };
 document.querySelector('#id').value = q.get('id') || '';
 document.querySelector('#token').value = q.get('token') || '';
 
@@ -17,7 +17,7 @@ async function retrieve() {
     `<p><b>${esc(LABELS[key] || key)}:</b> ${esc(field.value)}<br><small>Agreed by ${esc((field.sources || []).join(', ') || '—')}${
       (field.dissenting || []).length ? ` · disputed by ${esc(field.dissenting.join(', '))}` : ''}</small></p>`).join('');
 
-  out.innerHTML = `<div class="card"><small>GOLDEN ID • ${esc(d.status)}</small><h2>${esc((d.fields.name || {}).value || 'Scoped record')}</h2><p class="gid">${esc(d.gid)}</p></div>
+  out.innerHTML = `<div class="card"><small>GOLDEN ID • ${esc(d.status)}</small><h2>${esc((d.fields.holder_name || {}).value || 'Scoped record')}</h2><p class="gid">${esc(d.gid)}</p></div>
     <div class="face-panel"><h3>Released fields <span class="advisory-tag">scope: ${esc((d.scope || []).join(', '))}</span></h3>${rows || '<p>No fields were released by this token.</p>'}
     <p class="face-note">${esc(d.signatureNote || '')}</p>
     <p class="face-note">${esc(d.disclaimer || '')}</p></div>`;

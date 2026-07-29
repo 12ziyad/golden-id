@@ -20,7 +20,7 @@ process.env.ENABLE_ISSUANCE = 'true';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { server, setWorkflow, limiter } = require('../server');
+const { server, setWorkflow, limiter, resolveStatic, sweepAuth, sessions, otpChallenges } = require('../server');
 const { verify, getKeys } = require('../lib/record/issue');
 const { DECISIONS, ISSUABLE } = require('../lib/compare/decision');
 const { harness, fixture } = require('./helpers/harness');
@@ -377,4 +377,59 @@ test('the status endpoint reports the issuance flag and decision vocabulary', as
 test('unknown API routes 404 rather than falling through to static files', async () => {
   const response = await call('GET', '/api/v1/does-not-exist');
   assert.equal(response.status, 404);
+});
+
+// --- static serving, masking, auth hygiene ----------------------------------
+
+test('static paths outside public/ are refused, including sibling-prefix directories', () => {
+  assert.ok(resolveStatic('/index.html'), 'a normal file resolves');
+  assert.ok(resolveStatic('/'), 'the root resolves to index.html');
+  assert.equal(resolveStatic('/../server.js'), null);
+  // `<root>/public.bak` starts with `<root>/public`, so a bare prefix check
+  // would happily serve sibling directories.
+  assert.equal(resolveStatic('/../public.bak/leak.txt'), null);
+});
+
+test('static assets demand revalidation, so a fixed app.js always reaches the browser', async () => {
+  const response = await fetch(`${base}/index.html`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-cache');
+});
+
+test('the full document number never appears anywhere in an API document payload', async () => {
+  const token = await signIn('mask@example.com');
+  const applicationId = await newApplication(token);
+  const person = personFor(21);
+  const files = await Promise.all([
+    fixture('mask-pan.jpg', person.pan),
+    fixture('mask-aadhaar.jpg', person.aadhaar)
+  ]);
+
+  const ingested = await (await call('POST', `/api/v1/applications/${applicationId}/documents`, {
+    token, body: { consent: true, files }
+  })).json();
+  const serialisedIngest = JSON.stringify(ingested);
+  assert.ok(!serialisedIngest.includes(person.pan.document_number), 'PAN number leaked in the ingest response');
+  assert.ok(!serialisedIngest.includes(person.aadhaar.document_number), 'Aadhaar number leaked in the ingest response');
+  // The suffix survives, so the holder can still recognise their own card.
+  assert.ok(serialisedIngest.includes(person.pan.document_number.slice(-4)));
+
+  const fetched = await (await call('GET', `/api/v1/applications/${applicationId}`, { token })).json();
+  const serialisedGet = JSON.stringify(fetched);
+  assert.ok(!serialisedGet.includes(person.pan.document_number), 'PAN number leaked when reading the application');
+  assert.ok(!serialisedGet.includes(person.aadhaar.document_number), 'Aadhaar number leaked when reading the application');
+});
+
+test('expired sessions and OTP challenges are removed, not retained forever', async () => {
+  const token = await signIn('sweep@example.com');
+  sessions.get(token).expires = Date.now() - 1;
+  const probe = await call('GET', '/api/v1/auth/session', { token });
+  assert.equal(probe.status, 401);
+  assert.equal(sessions.has(token), false, 'an expired session is deleted the moment it is seen');
+
+  sessions.set('stale-session', { identifier: 'x', userId: 'u', expires: Date.now() - 1 });
+  otpChallenges.set('stale-otp', { identifier: 'x', otp: '000000', attempts: 0, expires: Date.now() - 1 });
+  sweepAuth();
+  assert.equal(sessions.has('stale-session'), false, 'the periodic sweep clears expired sessions');
+  assert.equal(otpChallenges.has('stale-otp'), false, 'the periodic sweep clears expired OTP challenges');
 });

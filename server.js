@@ -51,11 +51,19 @@ const readBody = req => new Promise((resolve, reject) => {
 const bearer = req => (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
 const clientKey = req => (req.socket.remoteAddress || 'unknown');
 
-/** Resolve the signed-in session, or null. */
+/** Resolve the signed-in session, or null. Expired sessions are deleted on sight. */
 function currentSession(req) {
-  const session = sessions.get(bearer(req));
-  if (!session || session.expires < Date.now()) return null;
+  const token = bearer(req);
+  const session = sessions.get(token);
+  if (!session) return null;
+  if (session.expires < Date.now()) { sessions.delete(token); return null; }
   return session;
+}
+
+/** Drop expired sessions and OTP challenges; both maps otherwise grow forever. */
+function sweepAuth(now = Date.now()) {
+  for (const [token, session] of sessions) if (session.expires < now) sessions.delete(token);
+  for (const [id, challenge] of otpChallenges) if (challenge.expires < now) otpChallenges.delete(id);
 }
 
 /** Apply a rate limit; returns true when the request was refused. */
@@ -110,7 +118,10 @@ async function api(req, res, url) {
     if (limited(req, res, 'otpVerify', clientKey(req))) return true;
     const { challengeId, otp } = await readBody(req);
     const challenge = otpChallenges.get(challengeId);
-    if (!challenge || challenge.expires < Date.now()) return json(res, 400, { error: 'OTP expired. Request a new one.' });
+    if (!challenge || challenge.expires < Date.now()) {
+      if (challenge) otpChallenges.delete(challengeId);
+      return json(res, 400, { error: 'OTP expired. Request a new one.' });
+    }
     challenge.attempts++;
     if (challenge.attempts > 5) { otpChallenges.delete(challengeId); return json(res, 429, { error: 'Too many attempts. Request a new OTP.' }); }
     if (String(otp) !== challenge.otp) return json(res, 401, { error: 'Incorrect OTP.' });
@@ -428,6 +439,17 @@ const mime = {
   '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml'
 };
 
+/**
+ * Map a URL path to a file inside public/, or null.
+ * The separator suffix matters: `<root>/public.bak` starts with
+ * `<root>/public`, so a bare prefix check would serve sibling directories.
+ */
+function resolveStatic(pathname) {
+  const requested = pathname === '/' ? '/index.html' : pathname;
+  const file = path.normalize(path.join(publicDir, requested));
+  return file.startsWith(publicDir + path.sep) ? file : null;
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -435,12 +457,16 @@ const server = http.createServer(async (req, res) => {
       if (await api(req, res, url) === false) json(res, 404, { error: 'Not found' });
       return;
     }
-    const requested = url.pathname === '/' ? '/index.html' : url.pathname;
-    const file = path.normalize(path.join(publicDir, requested));
-    if (!file.startsWith(publicDir)) return json(res, 403, { error: 'Forbidden' });
+    const file = resolveStatic(url.pathname);
+    if (!file) return json(res, 403, { error: 'Forbidden' });
     fs.readFile(file, (err, data) => {
       if (err) return json(res, 404, { error: 'Not found' });
-      res.writeHead(200, { 'content-type': mime[path.extname(file)] || 'application/octet-stream' });
+      res.writeHead(200, {
+        'content-type': mime[path.extname(file)] || 'application/octet-stream',
+        // Browsers must revalidate: a heuristically cached app.js silently
+        // resurrects fixed bugs long after the server has moved on.
+        'cache-control': 'no-cache'
+      });
       res.end(data);
     });
   } catch (error) {
@@ -452,7 +478,7 @@ if (require.main === module) {
   const flow = getWorkflow();
   flow.uploads.startSweeping();
   getKeys();
-  setInterval(() => limiter.sweep(), 5 * 60_000).unref?.();
+  setInterval(() => { limiter.sweep(); sweepAuth(); }, 5 * 60_000).unref?.();
 
   server.listen(config.port, () => {
     console.log(`Golden ID demo: http://localhost:${config.port}`);
@@ -464,4 +490,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { server, api, getStore, getWorkflow, setWorkflow, sessions, limiter };
+module.exports = { server, api, getStore, getWorkflow, setWorkflow, sessions, otpChallenges, limiter, resolveStatic, sweepAuth };
