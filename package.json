@@ -1,17 +1,32 @@
 {
   "name": "golden-id-prototype",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Consent-first identity consistency demo for India",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "check:models": "node scripts/check-models.js",
+    "check:models:smoke": "node scripts/check-models.js --smoke",
+    "bench:face": "node scripts/face-benchmark.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "dependencies": {
+    "@hyzyla/pdfium": "^2.1.13",
+    "@tensorflow/tfjs-backend-cpu": "4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "4.22.0",
+    "@tensorflow/tfjs-converter": "4.22.0",
+    "@tensorflow/tfjs-core": "4.22.0",
     "@tesseract.js-data/eng": "^1.0.0",
-    "tesseract.js": "^7.0.0"
+    "@tesseract.js-data/hin": "^1.0.0",
+    "@vladmandic/human": "^3.3.6",
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0",
+    "sharp": "^0.35.3",
+    "tesseract.js": "^7.0.0",
+    "yauzl": "^3.4.0",
+    "zxing-wasm": "^3.1.2"
   }
 }

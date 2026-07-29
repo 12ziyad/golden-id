@@ -1,4 +1,15 @@
 .env
 .uploads/
 *.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 node_modules/
+
+# Signing keys must never be committed. The default location is outside the
+# repository (~/.golden-id/), but ignore the pattern here as a second guard.
+*.pem
+signing-key*
+.golden-id/
+.tessdata/
+.bench/
