@@ -91,7 +91,7 @@ function harness(options = {}) {
     vision,
     crossCheckMode: options.crossCheckMode || 'on-low-confidence',
     ...(options.preprocess ? {} : {
-      assessQuality: async () => ({ usable: true, assessed: false, reasons: [], metrics: {} }),
+      assessQuality: options.assessQuality || (async () => ({ usable: true, assessed: false, reasons: [], metrics: {} })),
       normalizeImage: async buffer => ({ buffer, mimeType: 'image/jpeg', changed: false, orientationApplied: false })
     }),
     readAadhaarQr: options.readAadhaarQr || (async () => null),

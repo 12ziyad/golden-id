@@ -466,6 +466,40 @@ test('comparison requires an explicit, unique, active document selection', async
   assert.deepEqual(removedBody.ids, [ids[1]]);
 });
 
+test('removal is stamped and audited, and cannot happen twice', async () => {
+  const token = await signIn('remove@example.com');
+  const applicationId = await newApplication(token);
+  const ingested = await (await call('POST', `/api/v1/applications/${applicationId}/documents`, {
+    token, body: { consent: true, files: [await fixture('rm-pan.jpg', personFor(24).pan)] }
+  })).json();
+  const documentId = ingested.documents[0].id;
+
+  const removed = await call('DELETE', `/api/v1/applications/${applicationId}/documents/${documentId}`, { token });
+  assert.equal(removed.status, 200);
+  assert.ok((await removed.json()).document.removedAt, 'the removal moment is recorded');
+
+  const again = await call('DELETE', `/api/v1/applications/${applicationId}/documents/${documentId}`, { token });
+  assert.equal(again.status, 409);
+  assert.equal((await again.json()).code, 'already_removed');
+});
+
+test('duplicate bytes in one upload are skipped with a reason at the API', async () => {
+  const token = await signIn('dupe@example.com');
+  const applicationId = await newApplication(token);
+  const pan = await fixture('api-dup-pan.jpg', personFor(25).pan);
+
+  const first = await (await call('POST', `/api/v1/applications/${applicationId}/documents`, {
+    token, body: { consent: true, files: [pan] }
+  })).json();
+  assert.equal(first.documents.length, 1);
+
+  const second = await (await call('POST', `/api/v1/applications/${applicationId}/documents`, {
+    token, body: { consent: true, files: [pan] }
+  })).json();
+  assert.equal(second.documents.length, 1, 'no second row for the same bytes');
+  assert.ok(second.skipped.some(item => item.reason === 'duplicate_of_active_document'));
+});
+
 test('expired sessions and OTP challenges are removed, not retained forever', async () => {
   const token = await signIn('sweep@example.com');
   sessions.get(token).expires = Date.now() - 1;

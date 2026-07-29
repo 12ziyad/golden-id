@@ -198,14 +198,14 @@ test('the file-count and size limits hold', async () => {
   assert.ok(rejected.skipped.some(item => item.reason === 'file_too_large'));
 });
 
-test('duplicate bytes under different names both register as documents', async () => {
+test('duplicate bytes under different names both survive discovery', async () => {
   const jpeg = await makeJpeg('dupe');
   const result = await discover([
     { name: 'first.jpg', buffer: jpeg },
     { name: 'second.jpg', buffer: jpeg }
   ]);
-  // Both are kept: the extraction is shared by hash, but each file is its own
-  // document so the holder can see and remove them independently.
+  // Discovery keeps both — content dedup is INGEST's job, where it can see
+  // the whole application and answer with a reason instead of a silent drop.
   assert.equal(result.files.length, 2);
 });
 

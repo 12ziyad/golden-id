@@ -238,8 +238,12 @@ async function api(req, res, url) {
     const result = getWorkflow().removeDocument({
       applicationId: decodeURIComponent(removeMatch[1]),
       userId: session.userId,
-      documentId: decodeURIComponent(removeMatch[2])
+      documentId: decodeURIComponent(removeMatch[2]),
+      actor: session.identifier
     });
+    if (result.error === 'already_removed') {
+      return json(res, 409, { error: 'That document was already removed.', code: 'already_removed' });
+    }
     if (result.error) return json(res, 404, { error: 'That document is not part of this application.' });
     return json(res, 200, result);
   }

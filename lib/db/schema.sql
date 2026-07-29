@@ -136,6 +136,22 @@ CREATE TABLE IF NOT EXISTS corrections (
 CREATE INDEX IF NOT EXISTS idx_corrections_document ON corrections (document_id);
 CREATE INDEX IF NOT EXISTS idx_corrections_application ON corrections (application_id);
 
+-- Holder confirmations of soft value variations (e.g. MUHAMMED vs MUHAMMAD).
+-- INSERT-only by construction: a confirmation is never edited or deleted, and
+-- both source values are preserved verbatim inside it.
+CREATE TABLE IF NOT EXISTS confirmations (
+  id             TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL REFERENCES applications (id) ON DELETE CASCADE,
+  comparison_id  TEXT NOT NULL,
+  field          TEXT NOT NULL,
+  accepted_value TEXT NOT NULL,
+  other_values   TEXT NOT NULL DEFAULT '[]',
+  decision       TEXT NOT NULL,
+  actor          TEXT NOT NULL DEFAULT '',
+  created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_confirmations_application ON confirmations (application_id);
+
 -- One comparison run over a stable set of documents.
 CREATE TABLE IF NOT EXISTS comparisons (
   id             TEXT PRIMARY KEY,

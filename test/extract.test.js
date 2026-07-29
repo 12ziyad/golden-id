@@ -283,6 +283,33 @@ test('identical bytes are extracted exactly once', async () => {
   cleanup();
 });
 
+test('a cached quality-gate failure still asks for a retake on re-upload', async () => {
+  const { store, workflow, cleanup } = harness({
+    assessQuality: async () => ({
+      usable: false, assessed: true,
+      reasons: [{ reason: 'image_blurred', detail: 'The image is too blurred to read.' }],
+      metrics: { sharpness: 3 }
+    })
+  });
+  const file = await fixture('blurred-cache.jpg', { document_type: 'pan', holder_name: 'ASHA DEVI' });
+
+  const first = await seed(workflow, store, 'blur-a@example.com', [file]);
+  const original = store.listDocuments(first.application.id)[0];
+  assert.equal(original.status, 'retake_required');
+  assert.match(original.statusReason, /blurred/);
+
+  // The same bytes in a NEW application hit the extraction cache — and must
+  // come back as the same retake verdict with its original reasons, not as a
+  // mystery "unreadable".
+  const user = store.upsertUser('blur-b@example.com');
+  const second = workflow.startApplication(user.id);
+  await workflow.ingest({ applicationId: second.id, userId: user.id, files: [file] });
+  const cached = store.listDocuments(second.id)[0];
+  assert.equal(cached.status, 'retake_required');
+  assert.match(cached.statusReason, /blurred/);
+  cleanup();
+});
+
 test('one document failing never aborts the batch', async () => {
   const { store, workflow, cleanup } = harness({
     vision: {

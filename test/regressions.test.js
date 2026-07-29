@@ -24,6 +24,7 @@ const { DECISIONS, ISSUABLE } = require('../lib/compare/decision');
 const { extractionPrompt } = require('../lib/extract/prompts');
 const matrix = require('../lib/compare/matrix');
 const { buildConsensus } = require('../lib/record/consensus');
+const { LIMITS } = require('../lib/upload/discover');
 const { harness, fixture, seed } = require('./helpers/harness');
 
 test.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
@@ -228,13 +229,117 @@ test('re-ingesting the same file into one application does not duplicate it', as
   const { application, user } = await seed(workflow, store, 'a@example.com', [pan]);
   assert.equal(store.listDocuments(application.id).length, 1);
 
-  // Adding a second file must add exactly one document, not re-add the first.
+  // THE SAME BYTES again: no new row, and the response says why.
+  const again = await workflow.ingest({ applicationId: application.id, userId: user.id, files: [pan] });
+  assert.equal(store.listDocuments(application.id).length, 1, 'same bytes never become a second row');
+  assert.ok(again.skipped.some(item => item.reason === 'duplicate_of_active_document'));
+
+  // The same bytes under a DIFFERENT filename are still the same document.
+  await workflow.ingest({ applicationId: application.id, userId: user.id, files: [{ ...pan, name: 'renamed-pan.jpg' }] });
+  assert.equal(store.listDocuments(application.id).length, 1, 'filenames prove nothing; the bytes do');
+
+  // Adding a genuinely different file adds exactly one document.
   await workflow.ingest({ applicationId: application.id, userId: user.id, files: [aadhaar] });
   const documents = store.listDocuments(application.id);
   assert.equal(documents.length, 2);
 
   const names = documents.map(item => item.fileName).sort();
   assert.deepEqual(names, ['dup-aadhaar.jpg', 'dup-pan.jpg'], 'no duplicated file names');
+  cleanup();
+});
+
+test('re-uploading a removed file reactivates the SAME record, audited', async () => {
+  const { store, workflow, cleanup } = harness();
+  const pan = await fixture('react-pan.jpg', {
+    document_type: 'pan', holder_name: 'ASHA DEVI', dob: '01/01/1990', document_number: 'BQIPS8241E'
+  });
+  const { application, user } = await seed(workflow, store, 'a@example.com', [pan]);
+  const documentId = store.listDocuments(application.id)[0].id;
+
+  workflow.removeDocument({ applicationId: application.id, userId: user.id, documentId });
+  const removed = store.getDocument(documentId, application.id);
+  assert.equal(removed.status, 'removed_by_user');
+  assert.ok(removed.removedAt, 'removal is stamped');
+
+  // Removing it twice is a caller error, not a no-op.
+  const twice = workflow.removeDocument({ applicationId: application.id, userId: user.id, documentId });
+  assert.equal(twice.error, 'already_removed');
+
+  const result = await workflow.ingest({ applicationId: application.id, userId: user.id, files: [pan] });
+  const documents = store.listDocuments(application.id);
+  assert.equal(documents.length, 1, 'still one row — reactivated, not duplicated');
+  assert.equal(documents[0].id, documentId);
+  assert.equal(documents[0].status, 'ready');
+  assert.equal(documents[0].removedAt, null);
+  assert.deepEqual(result.reactivated.map(item => item.documentId), [documentId]);
+
+  const actions = store.auditForApplication(application.id).map(row => row.action);
+  assert.ok(actions.includes('document_removed'), 'removal is audited');
+  assert.ok(actions.includes('document_reactivated'), 'reactivation is audited');
+  cleanup();
+});
+
+test('removed documents stop consuming the upload budget', async () => {
+  const { store, workflow, cleanup } = harness();
+  const originalMax = LIMITS.maxFiles;
+  LIMITS.maxFiles = 2;
+  try {
+    const one = await fixture('bud-1.jpg', { document_type: 'pan', holder_name: 'ASHA DEVI', dob: '01/01/1990', document_number: 'BQIPS8241E' });
+    const two = await fixture('bud-2.jpg', { document_type: 'aadhaar', holder_name: 'ASHA DEVI', dob: '01/01/1990', gender: 'F', document_number: '234123412346' });
+    const three = await fixture('bud-3.jpg', { document_type: 'voter', holder_name: 'ASHA DEVI', dob: '01/01/1990', gender: 'F', document_number: 'ABC1234567' });
+
+    const { application, user } = await seed(workflow, store, 'bud@example.com', [one, two]);
+    const full = await workflow.ingest({ applicationId: application.id, userId: user.id, files: [three] });
+    assert.equal(full.overflow, 1, 'the application is full');
+
+    const first = store.listDocuments(application.id)[0];
+    workflow.removeDocument({ applicationId: application.id, userId: user.id, documentId: first.id });
+
+    const after = await workflow.ingest({ applicationId: application.id, userId: user.id, files: [three] });
+    assert.equal(after.overflow, 0, 'removing a document frees its slot');
+    assert.equal(
+      store.listDocuments(application.id).filter(document => document.status !== 'removed_by_user').length, 2);
+  } finally {
+    LIMITS.maxFiles = originalMax;
+  }
+  cleanup();
+});
+
+test('a document stuck in pending self-heals instead of wedging comparison forever', async () => {
+  const { store, workflow, cleanup } = harness();
+  const files = await Promise.all([
+    fixture('heal-pan.jpg', { document_type: 'pan', holder_name: 'ASHA DEVI', dob: '01/01/1990', document_number: 'BQIPS8241E' }),
+    fixture('heal-aadhaar.jpg', { document_type: 'aadhaar', holder_name: 'ASHA DEVI', dob: '01/01/1990', gender: 'F', document_number: '234123412346' })
+  ]);
+  const { application, user } = await seed(workflow, store, 'heal@example.com', files);
+
+  // Simulate a crash mid-ingest: a row that never finished extraction,
+  // last touched eleven minutes ago.
+  const batchId = store.createBatch(application.id, {});
+  const stuckId = store.createDocument({
+    applicationId: application.id, uploadBatchId: batchId,
+    contentHash: 'deadbeef', fileName: 'stuck.jpg', status: 'pending'
+  });
+  const past = new Date(Date.now() - 11 * 60_000).toISOString();
+  store.database.prepare('UPDATE documents SET updated_at = ?, created_at = ? WHERE id = ?').run(past, past, stuckId);
+
+  const ids = store.listDocuments(application.id).map(document => document.id);
+  const comparison = await workflow.compare({ applicationId: application.id, userId: user.id, documentIds: ids });
+
+  assert.notEqual(comparison.error, 'documents_still_processing', 'no permanent wedge');
+  assert.equal(store.getDocument(stuckId, application.id).status, 'unreadable');
+  assert.ok(store.auditForApplication(application.id).some(row => row.action === 'stale_extraction_healed'));
+  assert.ok(ISSUABLE.has(comparison.decision), 'the two good documents still verify');
+
+  // A FRESH pending row still blocks — healing is only for stale ones.
+  const freshId = store.createDocument({
+    applicationId: application.id, uploadBatchId: batchId,
+    contentHash: 'cafebabe', fileName: 'fresh.jpg', status: 'pending'
+  });
+  const blocked = await workflow.compare({
+    applicationId: application.id, userId: user.id, documentIds: [...ids, freshId]
+  });
+  assert.equal(blocked.error, 'documents_still_processing');
   cleanup();
 });
 
