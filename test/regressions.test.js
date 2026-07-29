@@ -520,6 +520,37 @@ test('a manually supplied required field unblocks the flow but is never verified
   cleanup();
 });
 
+test('an applicant-supplied value stays visible even when no document expected the field', async () => {
+  // Found live: a Voter ID carries a DOB only sometimes (partial by nature),
+  // so with a PAN that printed none either, a typed DOB had NO document
+  // expecting it — and vanished from the verdict and the record entirely.
+  const { store, workflow, cleanup } = harness();
+  const files = await Promise.all([
+    fixture('pv-pan.jpg', { document_type: 'pan', holder_name: 'NEHA FORMFILL', document_number: 'DQIPS5521G' }),
+    fixture('pv-voter.jpg', { document_type: 'voter', holder_name: 'NEHA FORMFILL', father_name: 'SUNIL FORMFILL', document_number: 'XYZ7654321' })
+  ]);
+  const { application, user } = await seed(workflow, store, 'pv@example.com', files);
+  const pan = store.listDocuments(application.id).find(document => document.type === 'pan');
+  workflow.correctField({
+    applicationId: application.id, userId: user.id, documentId: pan.id,
+    field: 'dob', value: '03/03/1995', actor: 'holder'
+  });
+
+  const ids = store.listDocuments(application.id).map(document => document.id);
+  const comparison = await workflow.compare({ applicationId: application.id, userId: user.id, documentIds: ids });
+
+  const dob = comparison.verdict.fields.find(field => field.label === 'dob');
+  assert.ok(dob, 'the applicant-supplied field is still part of the verdict');
+  assert.ok(dob.abstained.some(item => item.reason === 'holder_asserted'));
+  assert.ok(comparison.verdict.reasons.some(reason => reason.code === 'holder_supplied_unverified'));
+  assert.notEqual(comparison.decision, DECISIONS.VERIFIED_MATCH);
+
+  const consensus = buildConsensus(comparison.verdict, { documents: [] });
+  assert.equal(consensus.fields.dob.verificationStatus, 'unverified');
+  assert.equal(consensus.fields.dob.value, '1995-03-03');
+  cleanup();
+});
+
 test('every comparison records exactly which documents fed it', async () => {
   const { store, workflow, cleanup } = harness();
   const files = await Promise.all([

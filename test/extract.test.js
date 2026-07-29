@@ -269,6 +269,24 @@ test('the OCR fallback reads a two-digit year', () => {
 
 // --- orchestration end to end ----------------------------------------------
 
+test('near-JSON model output is salvaged, not discarded', () => {
+  const { parseAndValidate } = require('../lib/extract/schema');
+  // Observed live: moondream wrapped its answer in prose, used a bare
+  // property name and left a trailing comma — and the whole read was thrown
+  // away, downgrading the document to the OCR fallback.
+  const messy = `Here is the extracted information you asked for:
+{
+  document_type: "pan",
+  "holder_name": "ASHA TESTPERSON",
+  "dob": "01/01/1990",
+  "document_number": "BQIPS8241E",
+}
+Let me know if you need anything else!`;
+  const result = parseAndValidate(messy, { docType: 'pan', pageRole: 'front', source: 'vision', pageText: '' });
+  assert.equal(result.fields.holder_name.raw_value, 'ASHA TESTPERSON');
+  assert.equal(result.fields.document_number.raw_value, 'BQIPS8241E');
+});
+
 test('identical bytes are extracted exactly once', async () => {
   const { store, workflow, vision, cleanup } = harness();
   const file = await fixture('cache.jpg', { document_type: 'pan', holder_name: 'ASHA DEVI', dob: '01/01/1990', document_number: 'BQIPS8241E' });
