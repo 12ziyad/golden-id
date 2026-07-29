@@ -466,6 +466,118 @@ test('comparison requires an explicit, unique, active document selection', async
   assert.deepEqual(removedBody.ids, [ids[1]]);
 });
 
+// --- holder confirmations ----------------------------------------------------
+
+test('a soft name variation asks for confirmation; confirming preserves both values', async () => {
+  const token = await signIn('confirm@example.com');
+  const applicationId = await newApplication(token);
+
+  // MUHAMMED vs MUHAMMAD: a genuine one-character transliteration difference.
+  const files = await Promise.all([
+    fixture('cf-pan.jpg', {
+      document_type: 'pan', holder_name: 'MUHAMMED SAKIR K',
+      father_name: 'ABDUL RAHMAN K', dob: '12/08/1997', document_number: 'BQIPS8241E'
+    }),
+    fixture('cf-aadhaar.jpg', {
+      document_type: 'aadhaar', holder_name: 'MUHAMMAD SAKIR K',
+      dob: '12/08/1997', gender: 'MALE', document_number: '234123412346', address: '12 MG ROAD'
+    })
+  ]);
+  const ingested = await (await call('POST', `/api/v1/applications/${applicationId}/documents`, {
+    token, body: { consent: true, files }
+  })).json();
+  const ids = ingested.documents.map(document => document.id);
+
+  const compare = await call('POST', `/api/v1/applications/${applicationId}/compare`, {
+    token, body: { consent: true, documentIds: ids }
+  });
+  assert.equal(compare.status, 422);
+  const compared = await compare.json();
+  assert.equal(compared.decision, 'likely_match_needs_confirmation');
+  assert.ok(compared.verdict.confirmable.includes('holder_name'), 'the engine names what may be confirmed');
+
+  const confirmed = await call('POST', `/api/v1/applications/${applicationId}/confirmations`, {
+    token, body: { consent: true, comparisonId: compared.comparisonId, field: 'holder_name', decision: 'same_person' }
+  });
+  const outcome = await confirmed.json();
+  assert.ok([200, 201].includes(confirmed.status), JSON.stringify(outcome).slice(0, 400));
+  assert.ok(ISSUABLE.has(outcome.decision), `expected issuable after confirmation, got ${outcome.decision}`);
+  assert.ok(outcome.confirmation, 'the confirmation record is returned');
+
+  // Both spellings survive, side by side, with the holder-confirmation marked.
+  const name = outcome.verdict.fields.find(field => field.label === 'holder_name');
+  const variant = name.variants.find(item => item.holderConfirmed);
+  assert.ok(variant, 'the confirmed spelling is shown as a variant, not erased');
+  const spellings = [name.value, variant.value];
+  assert.ok(spellings.includes('MUHAMMED SAKIR K') && spellings.includes('MUHAMMAD SAKIR K'));
+  assert.ok(outcome.reasons.some(reason => reason.code === 'holder_confirmed_variation'));
+
+  // Durable, immutable and audited with the actor.
+  const rows = shared.store.confirmationsFor(applicationId);
+  assert.equal(rows.length, 1);
+  assert.ok(rows[0].otherValues.length >= 1, 'the other source value is preserved verbatim');
+  const event = shared.store.auditForApplication(applicationId)
+    .find(row => row.action === 'user_confirmed_soft_name_variation');
+  assert.ok(event, 'the confirmation is an audit event');
+  assert.equal(event.actor, 'confirm@example.com');
+});
+
+test('a hard DOB conflict cannot be confirmed away', async () => {
+  const token = await signIn('hard@example.com');
+  const applicationId = await newApplication(token);
+
+  const files = await Promise.all([
+    fixture('hd-pan.jpg', { document_type: 'pan', holder_name: 'RAKESH VERMA', dob: '01/01/1990', document_number: 'BQIPS9911E' }),
+    fixture('hd-aadhaar.jpg', { document_type: 'aadhaar', holder_name: 'RAKESH VERMA', dob: '05/05/1970', gender: 'M', document_number: '234123412346' })
+  ]);
+  const ingested = await (await call('POST', `/api/v1/applications/${applicationId}/documents`, {
+    token, body: { consent: true, files }
+  })).json();
+  const ids = ingested.documents.map(document => document.id);
+
+  const compare = await call('POST', `/api/v1/applications/${applicationId}/compare`, {
+    token, body: { consent: true, documentIds: ids }
+  });
+  assert.equal(compare.status, 422);
+  const compared = await compare.json();
+  assert.equal(compared.decision, 'document_conflict');
+  assert.equal(compared.verdict.needsManualReview, true);
+  assert.ok(!(compared.verdict.confirmable || []).length, 'a material conflict offers nothing to confirm');
+
+  const attempt = await call('POST', `/api/v1/applications/${applicationId}/confirmations`, {
+    token, body: { consent: true, comparisonId: compared.comparisonId, field: 'dob', decision: 'same_person' }
+  });
+  assert.equal(attempt.status, 400);
+  assert.equal((await attempt.json()).code, 'field_not_confirmable');
+});
+
+test('a superseded comparison cannot be confirmed', async () => {
+  const token = await signIn('stale@example.com');
+  const applicationId = await newApplication(token);
+  const files = await Promise.all([
+    fixture('st-pan.jpg', { document_type: 'pan', holder_name: 'MEENA JOSHI', dob: '02/02/1992', document_number: 'BQIPS7712E' }),
+    fixture('st-aadhaar.jpg', { document_type: 'aadhaar', holder_name: 'MEENA JOSHE', dob: '02/02/1992', gender: 'F', document_number: '234123412346' })
+  ]);
+  const ingested = await (await call('POST', `/api/v1/applications/${applicationId}/documents`, {
+    token, body: { consent: true, files }
+  })).json();
+  const ids = ingested.documents.map(document => document.id);
+
+  const first = await (await call('POST', `/api/v1/applications/${applicationId}/compare`, {
+    token, body: { consent: true, documentIds: ids }
+  })).json();
+  const second = await (await call('POST', `/api/v1/applications/${applicationId}/compare`, {
+    token, body: { consent: true, documentIds: ids }
+  })).json();
+  assert.notEqual(first.comparisonId, second.comparisonId);
+
+  const attempt = await call('POST', `/api/v1/applications/${applicationId}/confirmations`, {
+    token, body: { consent: true, comparisonId: first.comparisonId, field: 'holder_name', decision: 'same_person' }
+  });
+  assert.equal(attempt.status, 409);
+  assert.equal((await attempt.json()).code, 'comparison_superseded');
+});
+
 test('removal is stamped and audited, and cannot happen twice', async () => {
   const token = await signIn('remove@example.com');
   const applicationId = await newApplication(token);

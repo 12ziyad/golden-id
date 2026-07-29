@@ -66,6 +66,70 @@ function sweepAuth(now = Date.now()) {
   for (const [id, challenge] of otpChallenges) if (challenge.expires < now) otpChallenges.delete(id);
 }
 
+/**
+ * Shared tail for the compare and confirmation routes: shape the payload,
+ * pick the status, and issue when (and only when) the verdict and the flag
+ * both allow it.
+ */
+function respondComparison(res, flow, session, applicationId, comparison, extra = {}) {
+  const payload = {
+    applicationId,
+    comparisonId: comparison.comparisonId,
+    decision: comparison.decision,
+    status: comparison.verdict.status,
+    summary: comparison.verdict.summary,
+    reasons: comparison.verdict.reasons,
+    verdict: comparison.verdict,
+    face: comparison.face,
+    integrity: comparison.integrity,
+    documents: comparison.documents,
+    logicalDocuments: comparison.logicalDocuments,
+    selected: comparison.selected,
+    issuanceEnabled: flags.issuanceEnabled,
+    warning: 'Prototype extraction — not government verification.',
+    ...extra
+  };
+
+  // An integrity failure is always terminal, whatever the fields say.
+  if (comparison.decision === DECISIONS.BLOCKED_SECURITY_INTEGRITY) {
+    return json(res, 409, payload);
+  }
+  if (!comparison.verdict.issuable) {
+    return json(res, 422, payload);
+  }
+
+  if (!flags.issuanceEnabled) {
+    return json(res, 200, {
+      ...payload,
+      issued: false,
+      issuanceNote: issuanceBlockReason()
+    });
+  }
+
+  const issued = flow.issue({
+    applicationId, userId: session.userId, comparison, actor: session.identifier
+  });
+  if (issued.error) return json(res, 422, { ...payload, issued: false, issuanceError: issued.error });
+
+  const share = mintShareToken(flow.store, issued.gid, {
+    scope: ['holder_name', 'dob', 'gender', 'documents'],
+    actor: session.identifier
+  });
+
+  return json(res, issued.issued ? 201 : 200, {
+    ...payload,
+    issued: true,
+    gid: issued.gid,
+    record: issued.record,
+    signature: issued.signature,
+    alreadyIssued: !issued.issued,
+    dedupReason: issued.reason,
+    shareToken: share.token,
+    shareExpiresAt: share.expiresAt,
+    verifyUrl: `/verify.html?id=${encodeURIComponent(issued.gid)}`
+  });
+}
+
 /** Apply a rate limit; returns true when the request was refused. */
 function limited(req, res, bucket, key) {
   const result = limiter.take(`${bucket}:${key}`, LIMITS[bucket]);
@@ -284,59 +348,54 @@ async function api(req, res, url) {
       });
     }
 
-    const payload = {
+    return respondComparison(res, flow, session, applicationId, comparison);
+  }
+
+  // --- holder confirmation of a soft value variation ------------------------
+
+  const confirmMatch = pathname.match(/^\/api\/v1\/applications\/([^/]+)\/confirmations$/);
+  if (req.method === 'POST' && confirmMatch) {
+    const session = currentSession(req);
+    if (!session) return json(res, 401, { error: 'Please sign in before continuing.' });
+    if (limited(req, res, 'compare', session.userId)) return true;
+
+    const body = await readBody(req);
+    if (body.consent !== true) return json(res, 400, { error: 'Explicit consent is required.' });
+
+    const flow = getWorkflow();
+    const applicationId = decodeURIComponent(confirmMatch[1]);
+    const result = await flow.confirmVariation({
       applicationId,
-      comparisonId: comparison.comparisonId,
-      decision: comparison.decision,
-      status: comparison.verdict.status,
-      summary: comparison.verdict.summary,
-      reasons: comparison.verdict.reasons,
-      verdict: comparison.verdict,
-      face: comparison.face,
-      integrity: comparison.integrity,
-      documents: comparison.documents,
-      logicalDocuments: comparison.logicalDocuments,
-      issuanceEnabled: flags.issuanceEnabled,
-      warning: 'Prototype extraction — not government verification.'
-    };
-
-    // An integrity failure is always terminal, whatever the fields say.
-    if (comparison.decision === DECISIONS.BLOCKED_SECURITY_INTEGRITY) {
-      return json(res, 409, payload);
-    }
-    if (!comparison.verdict.issuable) {
-      return json(res, 422, payload);
-    }
-
-    if (!flags.issuanceEnabled) {
-      return json(res, 200, {
-        ...payload,
-        issued: false,
-        issuanceNote: issuanceBlockReason()
-      });
-    }
-
-    const issued = flow.issue({
-      applicationId, userId: session.userId, comparison, actor: session.identifier
-    });
-    if (issued.error) return json(res, 422, { ...payload, issued: false, issuanceError: issued.error });
-
-    const share = mintShareToken(flow.store, issued.gid, {
-      scope: ['holder_name', 'dob', 'gender', 'documents'],
+      userId: session.userId,
+      comparisonId: body.comparisonId,
+      field: body.field,
+      decision: body.decision,
       actor: session.identifier
     });
 
-    return json(res, issued.issued ? 201 : 200, {
-      ...payload,
-      issued: true,
-      gid: issued.gid,
-      record: issued.record,
-      signature: issued.signature,
-      alreadyIssued: !issued.issued,
-      dedupReason: issued.reason,
-      shareToken: share.token,
-      shareExpiresAt: share.expiresAt,
-      verifyUrl: `/verify.html?id=${encodeURIComponent(issued.gid)}`
+    if (result.error === 'application_not_found') return json(res, 404, { error: 'Application not found.' });
+    if (result.error === 'no_comparison' || result.error === 'comparison_superseded') {
+      return json(res, 409, {
+        error: 'That comparison has been superseded. Review the current result before confirming.',
+        code: result.error
+      });
+    }
+    if (result.error === 'field_not_confirmable') {
+      return json(res, 400, {
+        error: 'This difference cannot be confirmed by the holder. Add another document or request manual review.',
+        code: 'field_not_confirmable'
+      });
+    }
+    if (result.error) return json(res, 400, { error: 'Invalid confirmation request.', code: result.error });
+
+    return respondComparison(res, flow, session, applicationId, result.comparison, {
+      confirmation: {
+        id: result.confirmation.id,
+        field: result.confirmation.field,
+        acceptedValue: result.confirmation.acceptedValue,
+        otherValues: result.confirmation.otherValues,
+        createdAt: result.confirmation.createdAt
+      }
     });
   }
 
