@@ -12,7 +12,7 @@ Requires **Node.js 22+** (for `node:sqlite`). Developed on Node 24.
 npm install
 cp .env.example .env      # add CF_ACCOUNT_ID and CF_API_TOKEN
 npm start                 # http://localhost:3000
-npm test                  # 217 tests, fully offline
+npm test                  # 282 tests, fully offline
 ```
 
 `npm run check:models` verifies the configured Workers AI model IDs are still live. `npm run check:models:smoke` additionally sends one real inference per model.
@@ -182,7 +182,7 @@ Ownership enforced on every route · rate limiting on OTP, extraction, compariso
 npm test
 ```
 
-217 tests, entirely offline — all model calls are mocked. The suites that matter most are the ones that did not exist before:
+282 tests, entirely offline — all model calls are mocked. The suites that matter most are the ones that did not exist before:
 
 - **`isolation.test.js`** — two users, two applications, concurrent operation, the exact reported reproduction, foreign-document references, and cache sharing without ownership sharing. **Acceptable result is zero leakage.**
 - **`capability.test.js`** — a passport emitting parents or an address is rejected end to end and cannot reach consensus.
