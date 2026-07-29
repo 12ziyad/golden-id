@@ -61,6 +61,20 @@ async function newApplication(token) {
   return (await response.json()).applicationId;
 }
 
+/**
+ * Compare every active document the application holds, exactly as the UI does
+ * after the holder ticks them all: documentIds are now REQUIRED and explicit.
+ */
+async function compareAll(token, applicationId) {
+  const app = await (await call('GET', `/api/v1/applications/${applicationId}`, { token })).json();
+  const documentIds = (app.documents || [])
+    .filter(document => document.status !== 'removed_by_user')
+    .map(document => document.id);
+  return call('POST', `/api/v1/applications/${applicationId}/compare`, {
+    token, body: { consent: true, documentIds }
+  });
+}
+
 const { verhoeffDigit } = require('../lib/validate/checksums');
 
 /**
@@ -153,7 +167,7 @@ test('the full flow: application, ingest, compare, issue, share, retrieve', asyn
   assert.match(pan.validation.number, /^\*+002E$/);
 
   const compare = await call('POST', `/api/v1/applications/${applicationId}/compare`, {
-    token, body: { consent: true }
+    token, body: { consent: true, documentIds: ingested.documents.map(document => document.id) }
   });
   const compared = await compare.json();
   assert.equal(compare.status, 201, JSON.stringify(compared).slice(0, 400));
@@ -185,7 +199,7 @@ test('a second application for the same person returns the same Golden ID', asyn
   const runOnce = async () => {
     const applicationId = await newApplication(token);
     await call('POST', `/api/v1/applications/${applicationId}/documents`, { token, body: { consent: true, files } });
-    return (await (await call('POST', `/api/v1/applications/${applicationId}/compare`, { token, body: { consent: true } })).json());
+    return (await (await compareAll(token, applicationId)).json());
   };
 
   const first = await runOnce();
@@ -224,7 +238,7 @@ test('a per-field correction changes the verdict without re-uploading', async ()
     token, body: { consent: true, files }
   })).json();
 
-  const rejected = await call('POST', `/api/v1/applications/${applicationId}/compare`, { token, body: { consent: true } });
+  const rejected = await compareAll(token, applicationId);
   assert.equal(rejected.status, 422);
   const rejectedBody = await rejected.json();
   assert.ok(rejectedBody.verdict.blocking.includes('dob'));
@@ -236,7 +250,7 @@ test('a per-field correction changes the verdict without re-uploading', async ()
   assert.equal(patched.status, 200);
   assert.equal((await patched.json()).document.fields.dob, '12/08/1997');
 
-  const accepted = await (await call('POST', `/api/v1/applications/${applicationId}/compare`, { token, body: { consent: true } })).json();
+  const accepted = await (await compareAll(token, applicationId)).json();
   assert.ok(ISSUABLE.has(accepted.decision), `expected an issuable decision, got ${accepted.decision}`);
 });
 
@@ -246,7 +260,7 @@ test('a PAN without an address does not reject against an Aadhaar with one', asy
   const files = await Promise.all([fixture('addr-pan.jpg', personFor(5).pan), fixture('addr-aadhaar.jpg', personFor(5).aadhaar)]);
 
   await call('POST', `/api/v1/applications/${applicationId}/documents`, { token, body: { consent: true, files } });
-  const body = await (await call('POST', `/api/v1/applications/${applicationId}/compare`, { token, body: { consent: true } })).json();
+  const body = await (await compareAll(token, applicationId)).json();
 
   assert.ok(ISSUABLE.has(body.decision), `expected an issuable decision, got ${body.decision}`);
   assert.deepEqual(body.verdict.blocking, []);
@@ -263,7 +277,7 @@ test("one user cannot compare another user's application", async () => {
     token: alice, body: { consent: true, files: [await fixture('alice-pan.jpg', personFor(12).pan)] }
   });
 
-  const stolen = await call('POST', `/api/v1/applications/${applicationId}/compare`, { token: bob, body: { consent: true } });
+  const stolen = await compareAll(bob, applicationId);
   assert.equal(stolen.status, 404);
 
   const read = await call('GET', `/api/v1/applications/${applicationId}`, { token: bob });
@@ -303,7 +317,7 @@ test('share tokens: scope is enforced and expiry is honoured', async () => {
   const files = await Promise.all([fixture('share-pan.jpg', personFor(6).pan), fixture('share-aadhaar.jpg', personFor(6).aadhaar)]);
 
   await call('POST', `/api/v1/applications/${applicationId}/documents`, { token, body: { consent: true, files } });
-  const issued = await (await call('POST', `/api/v1/applications/${applicationId}/compare`, { token, body: { consent: true } })).json();
+  const issued = await (await compareAll(token, applicationId)).json();
 
   const share = await (await call('POST', `/api/v1/records/${issued.gid}/share`, {
     token, body: { scope: ['holder_name'], ttlSeconds: 60 }
@@ -331,7 +345,7 @@ test('a revoked record cannot be retrieved', async () => {
   const files = await Promise.all([fixture('rev-pan.jpg', personFor(7).pan), fixture('rev-passport.jpg', personFor(7).passport)]);
 
   await call('POST', `/api/v1/applications/${applicationId}/documents`, { token, body: { consent: true, files } });
-  const issued = await (await call('POST', `/api/v1/applications/${applicationId}/compare`, { token, body: { consent: true } })).json();
+  const issued = await (await compareAll(token, applicationId)).json();
 
   assert.equal((await call('POST', `/api/v1/records/${issued.gid}/revoke`, { token, body: { reason: 'test' } })).status, 200);
   const response = await call('GET', `/api/v1/cards/${issued.gid}?token=${encodeURIComponent(issued.shareToken)}`);
@@ -345,7 +359,7 @@ test("a user cannot share another user's record", async () => {
   const files = await Promise.all([fixture('a3-pan.jpg', personFor(8).pan), fixture('a3-aadhaar.jpg', personFor(8).aadhaar)]);
 
   await call('POST', `/api/v1/applications/${applicationId}/documents`, { token: alice, body: { consent: true, files } });
-  const issued = await (await call('POST', `/api/v1/applications/${applicationId}/compare`, { token: alice, body: { consent: true } })).json();
+  const issued = await (await compareAll(alice, applicationId)).json();
 
   const stolen = await call('POST', `/api/v1/records/${issued.gid}/share`, { token: bob, body: { scope: ['holder_name'] } });
   assert.equal(stolen.status, 404);
@@ -359,7 +373,7 @@ test('the full verdict report is retrievable by application id', async () => {
   const files = await Promise.all([fixture('rep-pan.jpg', personFor(9).pan), fixture('rep-aadhaar.jpg', personFor(9).aadhaar)]);
 
   await call('POST', `/api/v1/applications/${applicationId}/documents`, { token, body: { consent: true, files } });
-  await call('POST', `/api/v1/applications/${applicationId}/compare`, { token, body: { consent: true } });
+  await compareAll(token, applicationId);
 
   const report = await call('GET', `/api/v1/applications/${applicationId}/verdict`, { token });
   assert.equal(report.status, 200);
@@ -418,6 +432,38 @@ test('the full document number never appears anywhere in an API document payload
   const serialisedGet = JSON.stringify(fetched);
   assert.ok(!serialisedGet.includes(person.pan.document_number), 'PAN number leaked when reading the application');
   assert.ok(!serialisedGet.includes(person.aadhaar.document_number), 'Aadhaar number leaked when reading the application');
+});
+
+test('comparison requires an explicit, unique, active document selection', async () => {
+  const token = await signIn('contract@example.com');
+  const applicationId = await newApplication(token);
+  const person = personFor(23);
+  const files = await Promise.all([fixture('ct-pan.jpg', person.pan), fixture('ct-aadhaar.jpg', person.aadhaar)]);
+  const ingested = await (await call('POST', `/api/v1/applications/${applicationId}/documents`, {
+    token, body: { consent: true, files }
+  })).json();
+  const ids = ingested.documents.map(document => document.id);
+
+  const missing = await call('POST', `/api/v1/applications/${applicationId}/compare`, { token, body: { consent: true } });
+  assert.equal(missing.status, 400);
+  assert.equal((await missing.json()).code, 'document_ids_required');
+
+  const dup = await call('POST', `/api/v1/applications/${applicationId}/compare`, {
+    token, body: { consent: true, documentIds: [ids[0], ids[0], ids[1]] }
+  });
+  assert.equal(dup.status, 400);
+  const dupBody = await dup.json();
+  assert.equal(dupBody.code, 'duplicate_document_ids');
+  assert.deepEqual(dupBody.ids, [ids[0]]);
+
+  await call('DELETE', `/api/v1/applications/${applicationId}/documents/${ids[1]}`, { token });
+  const removed = await call('POST', `/api/v1/applications/${applicationId}/compare`, {
+    token, body: { consent: true, documentIds: ids }
+  });
+  assert.equal(removed.status, 400);
+  const removedBody = await removed.json();
+  assert.equal(removedBody.code, 'removed_document_selected');
+  assert.deepEqual(removedBody.ids, [ids[1]]);
 });
 
 test('expired sessions and OTP challenges are removed, not retained forever', async () => {

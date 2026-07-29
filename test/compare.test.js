@@ -275,6 +275,31 @@ test('a single document cannot corroborate itself', () => {
   assert.equal(verdict.issuable, false);
 });
 
+test('the same document passed twice is still one source, not two', () => {
+  // Below the API contract too: even if duplicate entries reach the engine,
+  // they share a logical id and can never clear the two-document minimum.
+  const pan = document('pan', { holder_name: 'ASHA DEVI', dob: '01/01/1990' });
+  const verdict = compareDocuments([pan, { ...pan }]);
+
+  const name = verdict.fields.find(field => field.label === 'holder_name');
+  assert.equal(name.corroboration, 1, 'duplicate entries count once');
+  assert.equal(verdict.decision, DECISIONS.INSUFFICIENT_EVIDENCE);
+  assert.equal(verdict.issuable, false);
+});
+
+test('two scans of one card are one source; a second card makes two', () => {
+  const scanA = document('aadhaar', { holder_name: 'ASHA DEVI', dob: '01/01/1990', gender: 'F' }, { id: 'a-1', logicalId: 'card-a' });
+  const scanB = document('aadhaar', { holder_name: 'ASHA DEVI', dob: '01/01/1990' }, { id: 'a-2', logicalId: 'card-a' });
+
+  const alone = compareDocuments([scanA, scanB]);
+  assert.equal(alone.decision, DECISIONS.INSUFFICIENT_EVIDENCE, 'pages of one card cannot corroborate each other');
+
+  const withPan = compareDocuments([scanA, scanB, document('pan', { holder_name: 'ASHA DEVI', dob: '01/01/1990' })]);
+  assert.ok(ISSUABLE.has(withPan.decision), `expected an issuable decision, got ${withPan.decision}`);
+  const name = withPan.fields.find(field => field.label === 'holder_name');
+  assert.equal(name.corroboration, 2);
+});
+
 test('an integrity failure overrides perfect field agreement', () => {
   const verdict = compareDocuments([
     document('pan', { holder_name: 'ASHA DEVI', dob: '01/01/1990' }),

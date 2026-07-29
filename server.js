@@ -264,6 +264,15 @@ async function api(req, res, url) {
     });
 
     if (comparison.error === 'application_not_found') return json(res, 404, { error: 'Application not found.' });
+    if (comparison.error === 'document_ids_required') {
+      return json(res, 400, { error: 'Select the documents to compare.', code: 'document_ids_required' });
+    }
+    if (comparison.error === 'duplicate_document_ids') {
+      return json(res, 400, { error: 'The same document was selected more than once.', code: 'duplicate_document_ids', ids: comparison.ids });
+    }
+    if (comparison.error === 'removed_document_selected') {
+      return json(res, 400, { error: 'A removed document cannot take part in a comparison.', code: 'removed_document_selected', ids: comparison.ids });
+    }
     if (comparison.error === 'documents_still_processing') {
       return json(res, 409, {
         error: 'Some documents are still being processed. Comparison will run once they finish.',

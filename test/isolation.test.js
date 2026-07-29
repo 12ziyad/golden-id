@@ -60,7 +60,9 @@ test("two users on one server never see each other's documents", async () => {
   const idsA = new Set(docsA.map(document => document.id));
   for (const document of docsB) assert.ok(!idsA.has(document.id), 'document leaked between applications');
 
-  const comparison = await workflow.compare({ applicationId: b.application.id, userId: b.user.id });
+  const comparison = await workflow.compare({
+    applicationId: b.application.id, userId: b.user.id, documentIds: docsB.map(document => document.id)
+  });
   const serialised = JSON.stringify(comparison);
 
   assert.ok(!serialised.includes('SAKIR'), "Sakir's name leaked into Mishab's comparison");
@@ -80,12 +82,18 @@ test('the reported reproduction: a second application never inherits the first',
 
   const first = workflow.startApplication(user.id);
   await workflow.ingest({ applicationId: first.id, userId: user.id, files: await sakirFiles() });
-  await workflow.compare({ applicationId: first.id, userId: user.id });
+  await workflow.compare({
+    applicationId: first.id, userId: user.id,
+    documentIds: store.listDocuments(first.id).map(document => document.id)
+  });
 
   // Same signed-in user, brand new application.
   const second = workflow.startApplication(user.id);
   await workflow.ingest({ applicationId: second.id, userId: user.id, files: await mishabFiles() });
-  const comparison = await workflow.compare({ applicationId: second.id, userId: user.id });
+  const comparison = await workflow.compare({
+    applicationId: second.id, userId: user.id,
+    documentIds: store.listDocuments(second.id).map(document => document.id)
+  });
 
   assert.equal(comparison.documents.length, 2);
   const serialised = JSON.stringify(comparison.verdict);
@@ -205,7 +213,10 @@ test('concurrent applications do not interleave', async () => {
     workflow.ingest({ applicationId: applications[index].id, userId: person.user.id, files: person.files })));
 
   const comparisons = await Promise.all(people.map((person, index) =>
-    workflow.compare({ applicationId: applications[index].id, userId: person.user.id })));
+    workflow.compare({
+      applicationId: applications[index].id, userId: person.user.id,
+      documentIds: store.listDocuments(applications[index].id).map(document => document.id)
+    })));
 
   comparisons.forEach((comparison, index) => {
     assert.equal(comparison.documents.length, 2, `application ${index} saw exactly its own documents`);

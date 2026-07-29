@@ -221,7 +221,10 @@ test('a hallucinating passport is sanitised end to end and never blocks', async 
   assert.equal(passport.fields.father_name, null);
   assert.equal(passport.fields.address, null);
 
-  const comparison = await workflow.compare({ applicationId: application.id, userId: user.id });
+  const comparison = await workflow.compare({
+    applicationId: application.id, userId: user.id,
+    documentIds: documents.map(document => document.id)
+  });
   const serialised = JSON.stringify(comparison.verdict);
   assert.ok(!serialised.includes('PARATHODI'), 'the fabricated address never reaches the verdict');
 

@@ -250,9 +250,80 @@ test('a removed document is excluded from the comparison', async () => {
   const voter = store.listDocuments(application.id).find(item => item.type === 'voter');
 
   workflow.removeDocument({ applicationId: application.id, userId: user.id, documentId: voter.id });
-  const comparison = await workflow.compare({ applicationId: application.id, userId: user.id });
+
+  const activeIds = store.listDocuments(application.id)
+    .filter(document => document.status !== 'removed_by_user')
+    .map(document => document.id);
+  const comparison = await workflow.compare({
+    applicationId: application.id, userId: user.id, documentIds: activeIds
+  });
 
   assert.ok(!JSON.stringify(comparison.verdict).includes('SOMEONE ELSE'), 'the removed document is gone from the verdict');
   assert.ok(ISSUABLE.has(comparison.decision), `expected an issuable decision, got ${comparison.decision}`);
+
+  // Selecting the removed document by id is refused outright, not silently
+  // filtered — the caller must know their selection was wrong.
+  const refused = await workflow.compare({
+    applicationId: application.id, userId: user.id, documentIds: [...activeIds, voter.id]
+  });
+  assert.equal(refused.error, 'removed_document_selected');
+  assert.deepEqual(refused.ids, [voter.id]);
+  cleanup();
+});
+
+// ---------------------------------------------------------------------------
+// The comparison contract: explicit, unique, active document ids only. A
+// single card listed twice used to clear the two-document evidence minimum
+// and could mint a verified_match from one photograph.
+// ---------------------------------------------------------------------------
+
+test('one card cannot become two sources: duplicates refused, a single card is insufficient', async () => {
+  const { store, workflow, cleanup } = harness();
+  const pan = await fixture('self-pan.jpg', {
+    document_type: 'pan', holder_name: 'ASHA DEVI', dob: '01/01/1990', document_number: 'BQIPS8241E'
+  });
+  const { application, user } = await seed(workflow, store, 'self@example.com', [pan]);
+  const documentId = store.listDocuments(application.id)[0].id;
+
+  const refused = await workflow.compare({
+    applicationId: application.id, userId: user.id, documentIds: [documentId, documentId]
+  });
+  assert.equal(refused.error, 'duplicate_document_ids');
+  assert.deepEqual(refused.ids, [documentId]);
+
+  const single = await workflow.compare({
+    applicationId: application.id, userId: user.id, documentIds: [documentId]
+  });
+  assert.equal(single.decision, DECISIONS.INSUFFICIENT_EVIDENCE);
+  assert.equal(single.verdict.issuable, false);
+  cleanup();
+});
+
+test('a comparison without an explicit selection is refused', async () => {
+  const { store, workflow, cleanup } = harness();
+  const { application, user } = await seed(workflow, store, 'sel@example.com', [
+    await fixture('sel-pan.jpg', { document_type: 'pan', holder_name: 'ASHA DEVI', dob: '01/01/1990', document_number: 'BQIPS8241E' })
+  ]);
+
+  assert.equal((await workflow.compare({ applicationId: application.id, userId: user.id })).error, 'document_ids_required');
+  assert.equal((await workflow.compare({ applicationId: application.id, userId: user.id, documentIds: [] })).error, 'document_ids_required');
+  cleanup();
+});
+
+test('every comparison records exactly which documents fed it', async () => {
+  const { store, workflow, cleanup } = harness();
+  const files = await Promise.all([
+    fixture('aud-pan.jpg', { document_type: 'pan', holder_name: 'ASHA DEVI', dob: '01/01/1990', document_number: 'BQIPS8241E' }),
+    fixture('aud-aadhaar.jpg', { document_type: 'aadhaar', holder_name: 'ASHA DEVI', dob: '01/01/1990', gender: 'F', document_number: '234123412346' })
+  ]);
+  const { application, user } = await seed(workflow, store, 'aud@example.com', files);
+  const ids = store.listDocuments(application.id).map(document => document.id);
+
+  const comparison = await workflow.compare({ applicationId: application.id, userId: user.id, documentIds: ids });
+  assert.deepEqual([...comparison.selected].sort(), [...ids].sort());
+
+  const audit = store.auditForApplication(application.id).find(row => row.action === 'comparison_requested');
+  assert.ok(audit, 'the request itself is audited');
+  assert.deepEqual(JSON.parse(audit.detail).sort(), [...ids].sort());
   cleanup();
 });
