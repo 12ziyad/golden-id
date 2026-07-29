@@ -180,6 +180,20 @@ test('dedup: the same person gets the same Golden ID', () => {
   store.close();
 });
 
+test('dedup: an unverified applicant-typed DOB never enters the identity fingerprint', () => {
+  const { dedupHashForRecord } = require('../lib/record/dedup');
+  const record = {
+    fields: {
+      holder_name: { value: 'ASHA DEVI' },
+      dob: { value: '1990-01-01', verificationStatus: 'unverified', provenance: 'applicant_supplied' },
+      gender: { value: 'F' }
+    }
+  };
+  // With the typed DOB excluded there is no verified DOB at all — no
+  // fingerprint, rather than one an applicant can steer by typing.
+  assert.equal(dedupHashForRecord(record), null);
+});
+
 test('dedup: name ordering cannot be used to obtain a second Golden ID', () => {
   assert.equal(
     dedupHash({ name: 'MUHAMMED SAKIR K', dob: '12/08/1997', gender: 'M' }),

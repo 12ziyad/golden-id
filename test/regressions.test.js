@@ -415,6 +415,111 @@ test('a comparison without an explicit selection is refused', async () => {
   cleanup();
 });
 
+// ---------------------------------------------------------------------------
+// Manual values are holder input, not document evidence (STRICT mode):
+// they display, they unblock, they never corroborate and never fake print.
+// ---------------------------------------------------------------------------
+
+test('a typed value can never manufacture document agreement', async () => {
+  const { store, workflow, cleanup } = harness();
+  const files = await Promise.all([
+    fixture('mv-pan.jpg', { document_type: 'pan', holder_name: 'ASHA DEVI', dob: '01/01/1990', document_number: 'BQIPS8241E' }),
+    // The voter card prints NO date of birth at all.
+    fixture('mv-voter.jpg', { document_type: 'voter', holder_name: 'ASHA DEVI', document_number: 'ABC1234567' })
+  ]);
+  const { application, user } = await seed(workflow, store, 'mv@example.com', files);
+  const voter = store.listDocuments(application.id).find(document => document.type === 'voter');
+
+  // The holder types the DOB the voter card never showed.
+  workflow.correctField({
+    applicationId: application.id, userId: user.id, documentId: voter.id,
+    field: 'dob', value: '01/01/1990', actor: 'holder'
+  });
+
+  const hydrated = store.getDocument(voter.id, application.id);
+  assert.equal(hydrated.fieldStates.dob.status, 'holder_asserted');
+  assert.equal(hydrated.fieldStates.dob.verified, false);
+  assert.equal(hydrated.fieldStates.dob.reason, 'user_supplied_value_not_printed_on_document');
+  // The immutable extraction still says the document showed nothing.
+  assert.equal(hydrated.rawFields.dob.raw_value, null);
+
+  const ids = store.listDocuments(application.id).map(document => document.id);
+  const comparison = await workflow.compare({ applicationId: application.id, userId: user.id, documentIds: ids });
+  const dob = comparison.verdict.fields.find(field => field.label === 'dob');
+
+  assert.equal(dob.corroboration, 1, 'only the PAN, a real document, corroborates the DOB');
+  assert.ok(!dob.agreeing.includes('voter'), 'the typed value is not "agreement"');
+  assert.ok(
+    dob.abstained.some(item => item.reason === 'holder_asserted' && /Applicant supplied/.test(item.detail)),
+    'the typed value is labelled applicant-supplied, not hidden'
+  );
+  cleanup();
+});
+
+test('a corrected printed value stays comparable but never corroborates (strict mode)', async () => {
+  const { store, workflow, cleanup } = harness();
+  const files = await Promise.all([
+    // The PAN name was misread by the model but verifiably printed.
+    fixture('cx-pan.jpg', { document_type: 'pan', holder_name: 'ASHA DEVL', dob: '01/01/1990', document_number: 'BQIPS8241E' }),
+    fixture('cx-aadhaar.jpg', { document_type: 'aadhaar', holder_name: 'ASHA DEVI', dob: '01/01/1990', gender: 'F', document_number: '234123412346' })
+  ]);
+  const { application, user } = await seed(workflow, store, 'cx@example.com', files);
+  const pan = store.listDocuments(application.id).find(document => document.type === 'pan');
+
+  workflow.correctField({
+    applicationId: application.id, userId: user.id, documentId: pan.id,
+    field: 'holder_name', value: 'ASHA DEVI', actor: 'holder'
+  });
+  const hydrated = store.getDocument(pan.id, application.id);
+  assert.equal(hydrated.fieldStates.holder_name.source, 'user_correction');
+  assert.equal(hydrated.fieldStates.holder_name.reason, 'user_corrected_printed_value');
+  assert.equal(hydrated.fieldStates.holder_name.documentValue, 'ASHA DEVL', 'the original read survives');
+
+  const ids = store.listDocuments(application.id).map(document => document.id);
+  const comparison = await workflow.compare({ applicationId: application.id, userId: user.id, documentIds: ids });
+  const name = comparison.verdict.fields.find(field => field.label === 'holder_name');
+
+  assert.deepEqual(name.dissenting, [], 'the correction prevents a false conflict');
+  assert.equal(name.corroboration, 1, 'but a corrected value is holder input, not a second document');
+  assert.equal(comparison.decision, DECISIONS.INSUFFICIENT_EVIDENCE,
+    'STRICT rule: PAN + Aadhaar with a corrected PAN name needs another document-evidenced source');
+  cleanup();
+});
+
+test('a manually supplied required field unblocks the flow but is never verified', async () => {
+  const { store, workflow, cleanup } = harness();
+  const files = await Promise.all([
+    // Neither document shows a date of birth.
+    fixture('nb-pan.jpg', { document_type: 'pan', holder_name: 'ASHA DEVI', document_number: 'BQIPS8241E' }),
+    fixture('nb-aadhaar.jpg', { document_type: 'aadhaar', holder_name: 'ASHA DEVI', gender: 'F', document_number: '234123412346' })
+  ]);
+  const { application, user } = await seed(workflow, store, 'nb@example.com', files);
+  const ids = store.listDocuments(application.id).map(document => document.id);
+
+  const blocked = await workflow.compare({ applicationId: application.id, userId: user.id, documentIds: ids });
+  assert.equal(blocked.decision, DECISIONS.INSUFFICIENT_EVIDENCE, 'a required field nobody shows blocks');
+
+  const pan = store.listDocuments(application.id).find(document => document.type === 'pan');
+  workflow.correctField({
+    applicationId: application.id, userId: user.id, documentId: pan.id,
+    field: 'dob', value: '01/01/1990', actor: 'holder'
+  });
+
+  const after = await workflow.compare({ applicationId: application.id, userId: user.id, documentIds: ids });
+  assert.ok(ISSUABLE.has(after.decision), `expected issuable, got ${after.decision}`);
+  assert.notEqual(after.decision, DECISIONS.VERIFIED_MATCH,
+    'a verdict resting on a typed value never calls itself a full match');
+  assert.ok(after.verdict.reasons.some(reason => reason.code === 'holder_supplied_unverified'));
+
+  // The record carries the value EXPLICITLY unverified, with provenance.
+  const consensus = buildConsensus(after.verdict, { documents: [] });
+  assert.equal(consensus.fields.dob.value, '1990-01-01');
+  assert.equal(consensus.fields.dob.verificationStatus, 'unverified');
+  assert.equal(consensus.fields.dob.provenance, 'applicant_supplied');
+  assert.match(consensus.fields.dob.note, /Applicant supplied; not verified/);
+  cleanup();
+});
+
 test('every comparison records exactly which documents fed it', async () => {
   const { store, workflow, cleanup } = harness();
   const files = await Promise.all([
