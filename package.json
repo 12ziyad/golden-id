@@ -1,0 +1,17 @@
+{
+  "name": "golden-id-prototype",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Consent-first identity consistency demo for India",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "tesseract.js": "^7.0.0"
+  }
+}
