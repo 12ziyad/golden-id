@@ -466,6 +466,36 @@ test('comparison requires an explicit, unique, active document selection', async
   assert.deepEqual(removedBody.ids, [ids[1]]);
 });
 
+test('every new application gets its own id', async () => {
+  const token = await signIn('ids@example.com');
+  const first = await newApplication(token);
+  const second = await newApplication(token);
+  assert.ok(first && second);
+  assert.notEqual(first, second, 'starting a new application always mints a new id');
+});
+
+test('a removed document never reaches issuance', async () => {
+  const token = await signIn('rmiss@example.com');
+  const applicationId = await newApplication(token);
+  const person = personFor(26);
+  const files = await Promise.all([
+    fixture('ri-pan.jpg', person.pan),
+    fixture('ri-aadhaar.jpg', person.aadhaar),
+    fixture('ri-passport.jpg', person.passport)
+  ]);
+  const ingested = await (await call('POST', `/api/v1/applications/${applicationId}/documents`, {
+    token, body: { consent: true, files }
+  })).json();
+  const passport = ingested.documents.find(document => document.type === 'passport');
+  await call('DELETE', `/api/v1/applications/${applicationId}/documents/${passport.id}`, { token });
+
+  const issued = await (await compareAll(token, applicationId)).json();
+  assert.ok(issued.gid, `expected issuance, got ${issued.decision}`);
+  assert.ok(!issued.selected.includes(passport.id), 'the removed document was not compared');
+  const backingTypes = issued.record.documents.map(document => document.type);
+  assert.ok(!backingTypes.includes('passport'), 'the removed document does not back the record');
+});
+
 // --- holder confirmations ----------------------------------------------------
 
 test('a soft name variation asks for confirmation; confirming preserves both values', async () => {

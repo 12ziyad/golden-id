@@ -102,6 +102,21 @@ test('a birth certificate number does not masquerade as another type', () => {
   assert.equal(result.type, 'birth_certificate');
 });
 
+test('a model-invented MRZ string cannot turn a Voter ID into a passport', () => {
+  // The documented live incident: the model returned MRZ-looking text for a
+  // real Voter ID. Unparsed text in an MRZ slot proves nothing — only a
+  // checksum-valid MRZ parse counts toward "passport".
+  const result = classifyDocument({
+    document_number: 'ABC1234567', // a valid EPIC format
+    mrz: 'P<INDSULAIMAN<<MUHAMMED<<<<<<<<<<<<<<<<<<<<<<<<'
+  }, 'passport', {});
+  assert.equal(result.type, 'voter', 'the EPIC number outweighs the fabricated MRZ and the model claim');
+
+  // A checksum-VALID MRZ, in contrast, is decisive.
+  const genuine = classifyDocument({}, 'unknown', { mrz: { valid: true } });
+  assert.equal(genuine.type, 'passport');
+});
+
 test('every correction explains itself', () => {
   const result = classifyDocument(REAL_AADHAAR_READ, 'pan');
   assert.ok(result.evidence.length > 1);
