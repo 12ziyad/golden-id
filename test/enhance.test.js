@@ -197,6 +197,30 @@ test('one OCR sighting is NOT consensus: the field stays unverified', async () =
   cleanup();
 });
 
+test('a good-quality photo whose local OCR is garbage is rescued by the targeted re-read', async () => {
+  // The real-document case: the image is FINE, the model reads the DOB
+  // correctly, but tesseract produces label-free noise, so nothing local can
+  // corroborate. The single-field re-read (an independent second reading)
+  // settles it — without weakening the hallucination guard.
+  const { store, workflow, cleanup } = harness({
+    vision: primaryOnlyVision(),
+    tesseract: async () => ({
+      text: 'zzkw 93ks 02ld 93ja lqpz 88dh 43jf 92kd asdw 71bd', fields: {}, source: 'tesseract-fallback'
+    })
+  });
+  const file = await fixture('real-photo-pan.jpg', {
+    document_type: 'pan', holder_name: 'MUHAMMED SAKIR K',
+    dob: '19/05/2003', father_name: 'RAHEEM KOTTAKANDI', document_number: 'MPWPK2241E'
+  });
+  const { application } = await seed(workflow, store, 'rp@example.com', [file]);
+  const document = store.listDocuments(application.id)[0];
+
+  assert.equal(document.status, 'ready');
+  assert.equal(document.rawFields.dob.status, 'present_verified');
+  assert.equal(document.rawFields.dob.evidence_reason, 'verified_by_field_reread');
+  cleanup();
+});
+
 test('an unusable image is refused with specific guidance, not guessed at', async () => {
   if (!sharp) return;
   const { store, workflow, cleanup } = harness({ preprocess: true });

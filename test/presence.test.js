@@ -333,6 +333,26 @@ test('evidence: a value with no field label anywhere on the page is not present'
   assert.equal(result.reason, 'no_label_for_field_on_page');
 });
 
+test('evidence: garbage OCR cannot witness absence — the read value stays visible', () => {
+  // A real phone photo of a guilloche-background PAN card produces OCR noise
+  // in which no field label survives. That noise proved nothing, yet it was
+  // turning correctly read DOBs into "not present" on real documents.
+  const garbage = 'xj93 kf0a 02kd 0a9d jf93 kdle 03kd 9dk3 lsdk 300a qwer zxcv';
+  const result = assessField({
+    field: 'dob', value: '19/05/2003', evidenceText: '19/05/2003', pageText: garbage, source: 'vision'
+  });
+  assert.equal(result.status, STATUS.PRESENT_UNCERTAIN, 'kept visible and re-readable, not erased');
+  assert.equal(result.reason, 'no_local_corroboration_available');
+
+  // But OCR that demonstrably READ the page still witnesses absence — the
+  // hallucinated-date guard is intact.
+  const readable = 'ELECTION COMMISSION OF INDIA\nElector Name: SOMEONE\nFather Name: OTHER PERSON';
+  const hallucinated = assessField({
+    field: 'dob', value: '2010-01-15', evidenceText: null, pageText: readable, source: 'vision'
+  });
+  assert.equal(hallucinated.status, STATUS.NOT_PRESENT);
+});
+
 test('evidence: a checksummed machine-readable source needs no corroboration', () => {
   const fromQr = assessField({ field: 'dob', value: '07/05/2002', source: 'barcode' });
   assert.equal(fromQr.status, STATUS.PRESENT_VERIFIED);

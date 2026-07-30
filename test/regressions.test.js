@@ -248,6 +248,26 @@ test('re-ingesting the same file into one application does not duplicate it', as
   cleanup();
 });
 
+test('re-uploading after an extractor upgrade re-reads the same row in place', async () => {
+  const { store, workflow, cleanup } = harness();
+  const pan = await fixture('upg-pan.jpg', {
+    document_type: 'pan', holder_name: 'ASHA DEVI', dob: '01/01/1990', document_number: 'BQIPS8241E'
+  });
+  const { application, user } = await seed(workflow, store, 'upg@example.com', [pan]);
+  const documentId = store.listDocuments(application.id)[0].id;
+
+  // Simulate a row read by an OLDER extractor version.
+  store.database.prepare('UPDATE documents SET extraction_key = ? WHERE id = ?').run('stale-key', documentId);
+
+  const result = await workflow.ingest({ applicationId: application.id, userId: user.id, files: [pan] });
+  const documents = store.listDocuments(application.id);
+  assert.equal(documents.length, 1, 'the same row is re-read, never duplicated');
+  assert.equal(documents[0].id, documentId);
+  assert.notEqual(documents[0].extractionKey, 'stale-key', 'the row now points at the current extraction');
+  assert.deepEqual(result.retried.map(item => item.documentId), [documentId]);
+  cleanup();
+});
+
 test('re-uploading a removed file reactivates the SAME record, audited', async () => {
   const { store, workflow, cleanup } = harness();
   const pan = await fixture('react-pan.jpg', {

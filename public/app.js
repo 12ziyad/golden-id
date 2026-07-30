@@ -719,8 +719,10 @@ function fieldRow(field, docs) {
     : '';
 
   const unreadable = (field.unreadable || []).length
-    ? `<div class="missing-note">Could not be read on: ${field.unreadable.map(item =>
-        `${escapeHtml(docLabel(item.type))}${item.detail ? ` (${escapeHtml(item.detail)})` : ''}`).join(', ')}</div>`
+    ? `<div class="missing-note">Could not be verified on: ${field.unreadable.map(item =>
+        item.observedValue
+          ? `${escapeHtml(docLabel(item.type))} (read “${escapeHtml(item.observedValue)}” but could not verify it against the page)`
+          : `${escapeHtml(docLabel(item.type))}${item.detail ? ` (${escapeHtml(item.detail)})` : ''}`).join(', ')}</div>`
     : '';
 
   // Documents that did not supply this field abstain, with the reason. This is
@@ -743,16 +745,31 @@ function fieldRow(field, docs) {
     : '';
 
   const fixable = field.severity === 'reject' || field.severity === 'needs_confirmation' || field.requiresManualEntry;
+
+  // Values that WERE read but could not be verified: offer them back as
+  // one-click accepts instead of making the holder retype what is on screen.
+  const observed = [...(field.unreadable || []), ...(field.abstained || [])]
+    .filter(item => item.observedValue && item.documentId);
+  const prefill = observed[0] || null;
+
   const options = docs
     .filter(document_ => document_.status === 'ready')
-    .map(document_ => `<option value="${escapeHtml(document_.id)}">${escapeHtml(docLabel(document_.type))}</option>`)
+    .map(document_ => `<option value="${escapeHtml(document_.id)}"${
+      prefill && document_.id === prefill.documentId ? ' selected' : ''}>${escapeHtml(docLabel(document_.type))}</option>`)
     .join('');
 
+  const quickAccept = fixable && observed.length
+    ? `<div class="fix-quick">${observed.map(item =>
+        `<button type="button" class="secondary" data-fix-use="${escapeHtml(field.label)}" data-fix-use-doc="${escapeHtml(item.documentId)}" data-fix-use-value="${escapeHtml(item.observedValue)}">Use “${escapeHtml(item.observedValue)}” (${escapeHtml(docLabel(item.type))}) and continue</button>`
+      ).join(' ')}</div>`
+    : '';
+
   const fix = fixable ? `<div class="fix-field">
-      <label>Correct this field
+      ${quickAccept}
+      <label>Correct this field — on document:
         <select data-fix-doc="${escapeHtml(field.label)}">${options}</select>
       </label>
-      <input data-fix-value="${escapeHtml(field.label)}" placeholder="${escapeHtml(field.value || 'Enter the value exactly as printed')}">
+      <input data-fix-value="${escapeHtml(field.label)}" value="${escapeHtml(prefill ? prefill.observedValue : '')}" placeholder="${escapeHtml(field.value || 'Enter the value exactly as printed')}">
       <button type="button" class="secondary" data-fix-apply="${escapeHtml(field.label)}">Apply &amp; re-check</button>
       <div class="fix-note">If the document does not actually print this field, your entry is recorded as supplied by you — not as verified document evidence.</div>
     </div>` : '';
@@ -1015,16 +1032,8 @@ function showConfirmationDialog(data) {
   };
 }
 
-/** Inline per-field correction: patch one field on one document, then re-compare. */
-result.addEventListener('click', async e => {
-  const button = e.target.closest('[data-fix-apply]');
-  if (!button || !currentApplicationId) return;
-
-  const field = button.dataset.fixApply;
-  const documentId = result.querySelector(`[data-fix-doc="${CSS.escape(field)}"]`).value;
-  const value = result.querySelector(`[data-fix-value="${CSS.escape(field)}"]`).value.trim();
-  if (!documentId || !value) return;
-
+/** Patch one field on one document, then re-compare. */
+async function applyCorrection(button, field, documentId, value, idleLabel) {
   button.disabled = true;
   button.textContent = 'Applying…';
   try {
@@ -1036,9 +1045,31 @@ result.addEventListener('click', async e => {
     await runComparison();
   } catch (error) {
     button.disabled = false;
-    button.textContent = 'Apply & re-check';
+    button.textContent = idleLabel;
     result.insertAdjacentHTML('afterbegin', `<div class="error">${escapeHtml(error.message)}</div>`);
   }
+}
+
+/** Inline per-field correction, typed or accepted from an unverified read. */
+result.addEventListener('click', async e => {
+  if (!currentApplicationId) return;
+
+  // One click: accept a value the extraction READ but could not verify.
+  // Recorded as supplied-by-you unless the document verifiably printed it.
+  const use = e.target.closest('[data-fix-use]');
+  if (use) {
+    await applyCorrection(use, use.dataset.fixUse, use.dataset.fixUseDoc, use.dataset.fixUseValue, 'Use this value');
+    return;
+  }
+
+  const button = e.target.closest('[data-fix-apply]');
+  if (!button) return;
+
+  const field = button.dataset.fixApply;
+  const documentId = result.querySelector(`[data-fix-doc="${CSS.escape(field)}"]`).value;
+  const value = result.querySelector(`[data-fix-value="${CSS.escape(field)}"]`).value.trim();
+  if (!documentId || !value) return;
+  await applyCorrection(button, field, documentId, value, 'Apply & re-check');
 });
 
 // --- boot ------------------------------------------------------------------

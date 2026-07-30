@@ -182,3 +182,6 @@ tr.sev-info .sev-tag, tr.sev-ok .sev-tag { color: #8b918c; }
 .confirm-values li { margin: 6px 0; }
 .confirm-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 .confirm-actions button { width: 100%; }
+
+.fix-quick { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.fix-quick button { text-align: left; }
