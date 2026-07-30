@@ -116,24 +116,30 @@ test('moondream uses the native run path with stream disabled', async () => {
   assert.equal(captured.body.stream, false);
 });
 
-test('llama uses OpenAI chat completions with an image_url block', async () => {
+test('llama vision uses the NATIVE run path with content-parts messages', async () => {
+  // Verified against the live API: /v1/chat/completions rejects this model's
+  // image parts (code 3030), while the native run path accepts the identical
+  // message shape — and returns JSON answers PRE-PARSED as an object.
   let captured = null;
   const client = createVisionClient({
     accountId: 'acct', apiToken: 'token',
     fetch: async (url, init) => {
       captured = { url, body: JSON.parse(init.body) };
-      return new Response(JSON.stringify({ choices: [{ message: { content: '{"document_type":"aadhaar"}' } }] }), { status: 200 });
+      return new Response(JSON.stringify({ result: { response: { document_type: 'aadhaar' } }, success: true }), { status: 200 });
     }
   });
 
-  await client.run('@cf/meta/llama-3.2-11b-vision-instruct', { prompt: 'read it', dataUri: 'data:image/jpeg;base64,AAA' });
-  assert.match(captured.url, /\/ai\/v1\/chat\/completions$/);
+  const text = await client.run('@cf/meta/llama-3.2-11b-vision-instruct', { prompt: 'read it', dataUri: 'data:image/jpeg;base64,AAA' });
+  assert.match(captured.url, /\/ai\/run\/@cf\/meta\/llama-3\.2-11b-vision-instruct$/);
+  assert.equal(captured.body.messages[0].content[0].type, 'text');
   assert.equal(captured.body.messages[0].content[1].type, 'image_url');
+  assert.equal(text, '{"document_type":"aadhaar"}', 'a pre-parsed object answer is re-serialised for the schema layer');
 });
 
 test('adapters are selected by model id', () => {
   assert.equal(adapterFor('@cf/moondream/moondream3.1-9B-A2B').path('@cf/moondream/moondream3.1-9B-A2B'), '/run/@cf/moondream/moondream3.1-9B-A2B');
-  assert.equal(adapterFor('@cf/meta/llama-3.2-11b-vision-instruct').path(), '/v1/chat/completions');
+  assert.equal(adapterFor('@cf/meta/llama-3.2-11b-vision-instruct').path('@cf/meta/llama-3.2-11b-vision-instruct'), '/run/@cf/meta/llama-3.2-11b-vision-instruct');
+  assert.equal(adapterFor('@cf/some/other-chat-model').path(), '/v1/chat/completions');
 });
 
 test('a retired model fails loudly and is never retried', async () => {

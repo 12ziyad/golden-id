@@ -136,7 +136,7 @@ SQLite (lib/db/) — users → applications → batches → documents (+ confirm
 
 ## 8. Remaining limitations (unchanged and stated plainly)
 
-- **Llama cross-check model needs a one-time licence acceptance on your Cloudflare account** (I don't accept agreements on your behalf). Until then the second-model cross-check is skipped gracefully; local OCR still provides the independent check. Accept with your own token: `curl -X POST "https://api.cloudflare.com/client/v4/accounts/<CF_ACCOUNT_ID>/ai/models/@cf/meta/llama-3.2-11b-vision-instruct/agreement" -H "Authorization: Bearer <CF_API_TOKEN>"` (the exact URL is also printed in the extraction error).
+- ~~Llama cross-check licence~~ **Resolved (30 Jul 2026, user-authorized):** the one-time Meta licence was accepted on the account, and the adapter was corrected to the model's native run path (the OpenAI-compatible route rejects its image parts — probed against the live API). Both models now pass a real-inference smoke test; two-model cross-confirmation is active.
 - Face matching is advisory only and its 0.5 threshold is an uncalibrated guess (`npm run bench:face` exists but needs a real photo corpus).
 - The Aadhaar Secure QR is decoded but its UIDAI signature is not verified (no bundled certificate).
 - No TLS, no real OTP delivery, plaintext SQLite at rest, `RETENTION_DAYS` unenforced — demo posture, documented in the README.
