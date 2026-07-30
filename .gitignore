@@ -13,3 +13,4 @@ signing-key*
 .golden-id/
 .tessdata/
 .bench/
+test-cards/
