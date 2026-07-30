@@ -58,7 +58,7 @@ test('a document the model types correctly is STILL re-read with its own prompt'
   // "corrected" — the old code therefore kept the weaker generic read.
   const file = await fixture('pan-correct-type.jpg', {
     document_type: 'pan', holder_name: 'MUHAMMED SAKIR K',
-    father_name: 'RAHEEM KOTTAKANDI', dob: '19/05/2003', document_number: 'MPWPK2241E'
+    father_name: 'RAHEEM KOTTAYIL', dob: '14/03/2001', document_number: 'HZVPK5578Q'
   });
 
   const { application } = await seed(workflow, store, 'a@example.com', [file]);
@@ -137,8 +137,8 @@ test('word order and capitalisation are agreement too', () => {
 // The exact live case: these two cards should now issue.
 test('the two real cards reach verified_match, not needs-confirmation', () => {
   const verdict = compareDocuments([
-    document('pan', { holder_name: 'MUHAMMED SAKIR K', dob: '19/05/2003', father_name: 'RAHEEM KOTTAKANDI' }),
-    document('aadhaar', { holder_name: 'MUHAMMEDSAKIR K', dob: '19/05/2003', gender: 'Male' })
+    document('pan', { holder_name: 'MUHAMMED SAKIR K', dob: '14/03/2001', father_name: 'RAHEEM KOTTAYIL' }),
+    document('aadhaar', { holder_name: 'MUHAMMEDSAKIR K', dob: '14/03/2001', gender: 'Male' })
   ]);
 
   assert.ok(ISSUABLE.has(verdict.decision), `expected an issuable decision, got ${verdict.decision}`);
@@ -150,8 +150,8 @@ test('the two real cards reach verified_match, not needs-confirmation', () => {
 test('a genuine one-character difference STILL asks for confirmation', () => {
   // The relaxation must not swallow a real spelling difference.
   const verdict = compareDocuments([
-    document('pan', { holder_name: 'MUHAMMED SAKIR K', dob: '19/05/2003' }),
-    document('aadhaar', { holder_name: 'MUHAMMAD SAKIR K', dob: '19/05/2003', gender: 'M' })
+    document('pan', { holder_name: 'MUHAMMED SAKIR K', dob: '14/03/2001' }),
+    document('aadhaar', { holder_name: 'MUHAMMAD SAKIR K', dob: '14/03/2001', gender: 'M' })
   ]);
   assert.equal(verdict.decision, DECISIONS.LIKELY_MATCH_NEEDS_CONFIRMATION);
   assert.ok(verdict.confirmations.includes('holder_name'));
@@ -159,7 +159,7 @@ test('a genuine one-character difference STILL asks for confirmation', () => {
 
 test('a genuinely different person is still refused', () => {
   const verdict = compareDocuments([
-    document('pan', { holder_name: 'MUHAMMED SAKIR K', dob: '19/05/2003' }),
+    document('pan', { holder_name: 'MUHAMMED SAKIR K', dob: '14/03/2001' }),
     document('aadhaar', { holder_name: 'RAJESH KUMAR', dob: '03/11/1985', gender: 'M' })
   ]);
   assert.equal(verdict.issuable, false);
@@ -168,8 +168,8 @@ test('a genuinely different person is still refused', () => {
 
 test('consensus credits a safe-variant document as a source', () => {
   const verdict = compareDocuments([
-    document('pan', { holder_name: 'MUHAMMED SAKIR K', dob: '19/05/2003' }),
-    document('aadhaar', { holder_name: 'MUHAMMEDSAKIR K', dob: '19/05/2003', gender: 'Male' })
+    document('pan', { holder_name: 'MUHAMMED SAKIR K', dob: '14/03/2001' }),
+    document('aadhaar', { holder_name: 'MUHAMMEDSAKIR K', dob: '14/03/2001', gender: 'Male' })
   ]);
   const consensus = buildConsensus(verdict, { documents: [] });
   assert.deepEqual(consensus.fields.holder_name.sources.sort(), ['aadhaar', 'pan']);
@@ -188,8 +188,8 @@ test('an Aadhaar with no printed address abstains instead of reporting failure',
   assert.equal(matrix.participates('aadhaar', 'address', 'front'), true, 'an address IS compared when present');
 
   const verdict = compareDocuments([
-    document('pan', { holder_name: 'MUHAMMED SAKIR K', dob: '19/05/2003' }),
-    document('aadhaar', { holder_name: 'MUHAMMED SAKIR K', dob: '19/05/2003', gender: 'Male' })
+    document('pan', { holder_name: 'MUHAMMED SAKIR K', dob: '14/03/2001' }),
+    document('aadhaar', { holder_name: 'MUHAMMED SAKIR K', dob: '14/03/2001', gender: 'Male' })
   ]);
 
   // Nobody printed one, so there is nothing to report at all — no row telling

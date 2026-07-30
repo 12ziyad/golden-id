@@ -210,7 +210,7 @@ test('a good-quality photo whose local OCR is garbage is rescued by the targeted
   });
   const file = await fixture('real-photo-pan.jpg', {
     document_type: 'pan', holder_name: 'MUHAMMED SAKIR K',
-    dob: '19/05/2003', father_name: 'RAHEEM KOTTAKANDI', document_number: 'MPWPK2241E'
+    dob: '14/03/2001', father_name: 'RAHEEM KOTTAYIL', document_number: 'HZVPK5578Q'
   });
   const { application } = await seed(workflow, store, 'rp@example.com', [file]);
   const document = store.listDocuments(application.id)[0];

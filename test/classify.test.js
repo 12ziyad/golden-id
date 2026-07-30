@@ -20,10 +20,10 @@ const REAL_AADHAAR_READ = {
   father_name: null,
   mother_name: null,
   spouse_name: null,
-  dob: '19/05/2003',
+  dob: '14/03/2001',
   gender: 'male',
   address: null,
-  document_number: '3204 3976 7873',
+  document_number: '7321 9450 0125',
   issue_date: '17/12/2012',
   expiry_date: null
 };
@@ -31,14 +31,14 @@ const REAL_AADHAAR_READ = {
 const REAL_PAN_READ = {
   document_type: 'pan',
   holder_name: 'MUHAMMEDSAKIR K',
-  father_name: 'RAHEEM KOTTAKANDI',
+  father_name: 'RAHEEM KOTTAYIL',
   mother_name: null,
   spouse_name: null,
-  dob: '19/05/2003',
+  dob: '14/03/2001',
   gender: null,
   address: null,
-  document_number: 'MPWPK2241E',
-  issue_date: '19/05/2003',
+  document_number: 'HZVPK5578Q',
+  issue_date: '14/03/2001',
   expiry_date: null
 };
 
@@ -66,7 +66,7 @@ test('the two real cards no longer collapse into the same type', () => {
 });
 
 test('the document number outweighs the model when they disagree', () => {
-  assert.equal(classifyDocument({ document_number: 'MPWPK2241E' }, 'aadhaar').type, 'pan');
+  assert.equal(classifyDocument({ document_number: 'HZVPK5578Q' }, 'aadhaar').type, 'pan');
   assert.equal(classifyDocument({ document_number: 'M1234567', expiry_date: '01/01/2030' }, 'voter').type, 'passport');
   assert.equal(classifyDocument({ document_number: 'ABC1234567' }, 'pan').type, 'voter');
 });
@@ -78,7 +78,7 @@ test('field presence alone identifies a card when the number is unreadable', () 
 });
 
 test("an Aadhaar never carries a father's name, and that counts against it", () => {
-  const result = classifyDocument({ father_name: 'RAHEEM KOTTAKANDI', document_number: 'MPWPK2241E' }, 'aadhaar');
+  const result = classifyDocument({ father_name: 'RAHEEM KOTTAYIL', document_number: 'HZVPK5578Q' }, 'aadhaar');
   assert.equal(result.type, 'pan');
   assert.equal(result.corrected, true);
 });
@@ -108,7 +108,7 @@ test('a model-invented MRZ string cannot turn a Voter ID into a passport', () =>
   // checksum-valid MRZ parse counts toward "passport".
   const result = classifyDocument({
     document_number: 'ABC1234567', // a valid EPIC format
-    mrz: 'P<INDSULAIMAN<<MUHAMMED<<<<<<<<<<<<<<<<<<<<<<<<'
+    mrz: 'P<INDSALEEM<<MUHAMMED<<<<<<<<<<<<<<<<<<<<<<<<'
   }, 'passport', {});
   assert.equal(result.type, 'voter', 'the EPIC number outweighs the fabricated MRZ and the model claim');
 
@@ -174,7 +174,7 @@ test('the two real cards compare as one person once both bugs are fixed', () => 
 
   // The date of birth matches exactly across both cards.
   const dob = verdict.fields.find(field => field.label === 'dob');
-  assert.equal(dob.value, '2003-05-19');
+  assert.equal(dob.value, '2001-03-14');
   assert.deepEqual(dob.dissenting, []);
 
   // The PAN's absent gender must not count against the Aadhaar's.

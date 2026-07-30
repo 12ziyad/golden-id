@@ -93,7 +93,7 @@ const spaced = number => number.replace(/(\d{4})(?=\d)/g, '$1 ');
 
   // Person 2: soft transliteration pair for the confirmation flow.
   write('pan-sakir.jpg', await render(panCard({
-    name: 'MUHAMMED SAKIR K', father: 'ABDUL RAHMAN K', dob: '12/08/1997', number: 'MPWPK2241E'
+    name: 'MUHAMMED SAKIR K', father: 'ABDUL RAHMAN K', dob: '12/08/1997', number: 'HZVPK5578Q'
   })));
   write('aadhaar-sakir.jpg', await render(aadhaarCard({
     name: 'MUHAMMAD SAKIR K', dob: '12/08/1997', gender: 'MALE',

@@ -124,7 +124,7 @@ When the top two candidates are close it returns `needs_confirmation` rather tha
 Names use **several independent signals**, not one score: token-set alignment (order-insensitive), Damerau-Levenshtein, Jaro-Winkler, a phonetic key for Indic transliteration, glued-form comparison, initial expansion, and surname-initial detection. Each difference is classified as:
 
 - **safe variant** — case, spacing, word order, honorifics, abbreviation expansion. Normalised silently.
-- **needs confirmation** — one or two characters, a dropped middle name, or a surname-initial relationship (`MUHAMMED MISHAB SULAIMAN P` vs surname `PARATHODI`). Plausible, but *inferred*, so the holder confirms it.
+- **needs confirmation** — one or two characters, a dropped middle name, or a surname-initial relationship (`MUHAMMED MISHAB SALEEM P` vs surname `PARATHODI`). Plausible, but *inferred*, so the holder confirms it.
 - **different** — genuinely not the same name.
 
 **A single low-confidence OCR read never hard-rejects an applicant.**

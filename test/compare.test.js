@@ -75,7 +75,7 @@ test('a one-character difference asks for confirmation', () => {
 
 // The surname-initial relationship: plausible, but inferred, so confirmed.
 test('a surname initial is surfaced for confirmation rather than assumed', () => {
-  const result = compareNames('MUHAMMED MISHAB SULAIMAN P', 'MUHAMMED MISHAB SULAIMAN PARATHODI');
+  const result = compareNames('MUHAMMED MISHAB SALEEM P', 'MUHAMMED MISHAB SALEEM PARATHODI');
   assert.equal(result.verdict, VERDICTS.NEEDS_CONFIRMATION);
   assert.ok(result.signals.includes('surname_initial'));
   assert.match(result.explanation, /PARATHODI/);

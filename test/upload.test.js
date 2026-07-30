@@ -265,7 +265,7 @@ test('two DIFFERENT people are never grouped, even with the same document type',
 test('two different valid numbers of the same type are two cards', () => {
   const link = pagesLink(
     doc('a', 'pan', { document_number: 'BQIPS8241E' }),
-    doc('b', 'pan', { document_number: 'MPWPK2241E' })
+    doc('b', 'pan', { document_number: 'HZVPK5578Q' })
   );
   assert.equal(link.linked, false);
   assert.equal(link.reason, 'different_document_numbers');

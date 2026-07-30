@@ -62,12 +62,12 @@ test("an Aadhaar carries a father's name only with an explicit relationship mark
 test('a passport emitting a father name has it REJECTED, not stored', () => {
   const result = validateExtraction({
     document_type: 'passport',
-    holder_name: 'MUHAMMED MISHAB SULAIMAN',
-    father_name: 'MUHAMMED MISHAB SULAIMAN',   // the holder's own name, mis-mapped
-    mother_name: 'MUHAMMED MISHAB SULAIMAN',
+    holder_name: 'MUHAMMED MISHAB SALEEM',
+    father_name: 'MUHAMMED MISHAB SALEEM',   // the holder's own name, mis-mapped
+    mother_name: 'MUHAMMED MISHAB SALEEM',
     address: 'PARATHODI',                       // actually a place of birth
     dob: '02/02/1998',
-    document_number: 'M7654321'
+    document_number: 'T4839211'
   }, { docType: 'passport', pageRole: 'front', trustValues: true });
 
   assert.equal(result.fields.father_name.status, 'invalid');
@@ -76,13 +76,13 @@ test('a passport emitting a father name has it REJECTED, not stored', () => {
   assert.equal(result.fields.father_name.normalized_value, null);
 
   // The raw value is retained so the hallucination is auditable, not vanished.
-  assert.equal(result.fields.father_name.raw_value, 'MUHAMMED MISHAB SULAIMAN');
+  assert.equal(result.fields.father_name.raw_value, 'MUHAMMED MISHAB SALEEM');
   assert.equal(result.rejected.length, 3);
   assert.ok(result.rejected.every(item => item.reason === 'field_impossible_for_document'));
 
   // Legitimate fields are untouched.
   assert.equal(result.fields.holder_name.status, 'present_verified');
-  assert.equal(result.fields.holder_name.normalized_value, 'MUHAMMED MISHAB SULAIMAN');
+  assert.equal(result.fields.holder_name.normalized_value, 'MUHAMMED MISHAB SALEEM');
 });
 
 test('a PAN emitting a gender or address has them rejected', () => {
@@ -197,15 +197,15 @@ test('a hallucinating passport is sanitised end to end and never blocks', async 
   const files = await Promise.all([
     fixture('passport.jpg', {
       document_type: 'passport',
-      holder_name: 'MUHAMMED MISHAB SULAIMAN',
-      father_name: 'MUHAMMED MISHAB SULAIMAN',
-      mother_name: 'MUHAMMED MISHAB SULAIMAN',
+      holder_name: 'MUHAMMED MISHAB SALEEM',
+      father_name: 'MUHAMMED MISHAB SALEEM',
+      mother_name: 'MUHAMMED MISHAB SALEEM',
       address: 'PARATHODI',
-      dob: '02/02/1998', gender: 'M', document_number: 'M7654321'
+      dob: '02/02/1998', gender: 'M', document_number: 'T4839211'
     }),
     fixture('voter.jpg', {
       document_type: 'voter',
-      holder_name: 'MUHAMMED MISHAB SULAIMAN',
+      holder_name: 'MUHAMMED MISHAB SALEEM',
       dob: '02/02/1998', gender: 'M', document_number: 'XYZ7654321'
     })
   ]);

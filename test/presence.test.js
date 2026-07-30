@@ -46,8 +46,8 @@ const verified = fields => Object.fromEntries(Object.keys(fields).map(field => [
 // --- 1 ----------------------------------------------------------------------
 
 test('1. a Voter ID with no printed DOB does not mismatch an Aadhaar that has one', () => {
-  const voterFields = { holder_name: 'MUHAMMED MISHAB SULAIMAN P', gender: 'M', father_name: 'SULAIMAN P' };
-  const aadhaarFields = { holder_name: 'Muhammed Mishab Sulaiman P', dob: '07/05/2002', gender: 'Male' };
+  const voterFields = { holder_name: 'MUHAMMED MISHAB SALEEM P', gender: 'M', father_name: 'SALEEM P' };
+  const aadhaarFields = { holder_name: 'Muhammed Mishab Saleem P', dob: '23/11/2000', gender: 'Male' };
 
   const verdict = compareDocuments([
     doc('voter', { ...voterFields, dob: null }, { ...verified(voterFields), dob: STATUS.NOT_PRESENT }),
@@ -55,7 +55,7 @@ test('1. a Voter ID with no printed DOB does not mismatch an Aadhaar that has on
   ]);
 
   const dob = verdict.fields.find(field => field.label === 'dob');
-  assert.equal(dob.value, '2002-05-07');
+  assert.equal(dob.value, '2000-11-23');
   assert.deepEqual(dob.agreeing, ['aadhaar'], 'only the Aadhaar supplied it');
   assert.deepEqual(dob.dissenting, [], 'the Voter ID cannot dissent about a field it never showed');
   assert.equal(dob.status, 'single_source');
@@ -69,10 +69,10 @@ test('1. a Voter ID with no printed DOB does not mismatch an Aadhaar that has on
 // --- 2 ----------------------------------------------------------------------
 
 test('2. a Voter ID that DOES print the same DOB agrees with the Aadhaar', () => {
-  const fields = { holder_name: 'MUHAMMED MISHAB SULAIMAN P', dob: '07/05/2002', gender: 'M' };
+  const fields = { holder_name: 'MUHAMMED MISHAB SALEEM P', dob: '23/11/2000', gender: 'M' };
   const verdict = compareDocuments([
     doc('voter', fields, verified(fields)),
-    doc('aadhaar', { ...fields, holder_name: 'Muhammed Mishab Sulaiman P' }, verified(fields))
+    doc('aadhaar', { ...fields, holder_name: 'Muhammed Mishab Saleem P' }, verified(fields))
   ]);
 
   const dob = verdict.fields.find(field => field.label === 'dob');
@@ -84,8 +84,8 @@ test('2. a Voter ID that DOES print the same DOB agrees with the Aadhaar', () =>
 // --- 3 ----------------------------------------------------------------------
 
 test('3. a Voter ID printing a DIFFERENT DOB is a real mismatch', () => {
-  const voterFields = { holder_name: 'MUHAMMED MISHAB SULAIMAN P', dob: '15/01/2010', gender: 'M' };
-  const aadhaarFields = { holder_name: 'Muhammed Mishab Sulaiman P', dob: '07/05/2002', gender: 'Male' };
+  const voterFields = { holder_name: 'MUHAMMED MISHAB SALEEM P', dob: '15/01/2010', gender: 'M' };
+  const aadhaarFields = { holder_name: 'Muhammed Mishab Saleem P', dob: '23/11/2000', gender: 'Male' };
 
   const verdict = compareDocuments([
     doc('voter', voterFields, verified(voterFields)),
@@ -104,19 +104,19 @@ test('3. a Voter ID printing a DIFFERENT DOB is a real mismatch', () => {
 test('4. a hallucinated DOB with no evidence is discarded before comparison', () => {
   // The model returns a date but offers no printed text supporting it, and the
   // independent page text has no date-of-birth label anywhere.
-  const pageText = 'ELECTION COMMISSION OF INDIA\nELECTOR PHOTO IDENTITY CARD\nZKV2498574\n'
-    + "Elector's Name: MUHAMMED MISHAB SULAIMAN P\nFather's Name: SULAIMAN P\nSex: M";
+  const pageText = 'ELECTION COMMISSION OF INDIA\nELECTOR PHOTO IDENTITY CARD\nQWZ8046131\n'
+    + "Elector's Name: MUHAMMED MISHAB SALEEM P\nFather's Name: SALEEM P\nSex: M";
 
   const result = validateExtraction({
     document_type: 'voter',
-    holder_name: 'MUHAMMED MISHAB SULAIMAN P',
-    father_name: 'SULAIMAN P',
+    holder_name: 'MUHAMMED MISHAB SALEEM P',
+    father_name: 'SALEEM P',
     gender: 'M',
     dob: '2010-01-15',
-    document_number: 'ZKV2498574',
+    document_number: 'QWZ8046131',
     evidence: {
-      holder_name: "Elector's Name: MUHAMMED MISHAB SULAIMAN P",
-      father_name: "Father's Name: SULAIMAN P",
+      holder_name: "Elector's Name: MUHAMMED MISHAB SALEEM P",
+      father_name: "Father's Name: SALEEM P",
       gender: 'Sex: M'
       // no dob evidence — the model could not point at one, because there is none
     }
@@ -133,24 +133,24 @@ test('4. a hallucinated DOB with no evidence is discarded before comparison', ()
 });
 
 test('4b. a value whose evidence exists and is corroborated IS accepted', () => {
-  const pageText = 'GOVERNMENT OF INDIA\nMuhammed Mishab Sulaiman P\nDOB: 07/05/2002\nMale\n9580 6990 9200';
+  const pageText = 'GOVERNMENT OF INDIA\nMuhammed Mishab Saleem P\nDOB: 23/11/2000\nMale\n8430 6921 7504';
   const result = validateExtraction({
     document_type: 'aadhaar',
-    holder_name: 'Muhammed Mishab Sulaiman P',
-    dob: '07/05/2002',
+    holder_name: 'Muhammed Mishab Saleem P',
+    dob: '23/11/2000',
     gender: 'Male',
-    document_number: '9580 6990 9200',
-    evidence: { holder_name: 'Muhammed Mishab Sulaiman P', dob: 'DOB: 07/05/2002', gender: 'Male' }
+    document_number: '8430 6921 7504',
+    evidence: { holder_name: 'Muhammed Mishab Saleem P', dob: 'DOB: 23/11/2000', gender: 'Male' }
   }, { docType: 'aadhaar', pageRole: 'front', pageText });
 
   assert.equal(result.fields.dob.status, STATUS.PRESENT_VERIFIED);
-  assert.equal(result.fields.dob.normalized_value, '07/05/2002');
+  assert.equal(result.fields.dob.normalized_value, '23/11/2000');
   assert.match(result.fields.dob.evidence_text, /DOB/);
 });
 
 test('4c. a date on the page under the WRONG label is not a date of birth', () => {
   // The card prints an issue date. It is not a DOB and must not become one.
-  const pageText = 'ELECTION COMMISSION OF INDIA\nZKV2498574\nDate of Issue: 15/01/2010\nSex: M';
+  const pageText = 'ELECTION COMMISSION OF INDIA\nQWZ8046131\nDate of Issue: 15/01/2010\nSex: M';
   const result = validateExtraction({
     document_type: 'voter',
     holder_name: 'SOMEONE',
@@ -165,8 +165,8 @@ test('4c. a date on the page under the WRONG label is not a date of birth', () =
 // --- 5 ----------------------------------------------------------------------
 
 test('5. a field only one document supplies is single-source, not agreement', () => {
-  const voterFields = { holder_name: 'MUHAMMED MISHAB SULAIMAN P', gender: 'M', father_name: 'SULAIMAN P' };
-  const aadhaarFields = { holder_name: 'MUHAMMED MISHAB SULAIMAN P', dob: '07/05/2002', gender: 'M' };
+  const voterFields = { holder_name: 'MUHAMMED MISHAB SALEEM P', gender: 'M', father_name: 'SALEEM P' };
+  const aadhaarFields = { holder_name: 'MUHAMMED MISHAB SALEEM P', dob: '23/11/2000', gender: 'M' };
 
   const verdict = compareDocuments([
     doc('voter', voterFields, verified(voterFields)),
@@ -301,10 +301,10 @@ test('10. a correction supplies a value but cannot claim the document printed it
     contentHash: 'hash-1', extractionKey: key, docType: 'voter', status: 'ready'
   });
 
-  const updated = store.setCorrection(documentId, application.id, 'dob', '07/05/2002', 'holder');
+  const updated = store.setCorrection(documentId, application.id, 'dob', '23/11/2000', 'holder');
 
   // The value is usable...
-  assert.equal(updated.fields.dob, '07/05/2002');
+  assert.equal(updated.fields.dob, '23/11/2000');
   assert.equal(updated.fieldStates.dob.source, 'user');
   // ...but the record is explicit that the DOCUMENT did not show it.
   assert.equal(updated.fieldStates.dob.reason, 'user_supplied_value_not_printed_on_document');
@@ -327,7 +327,7 @@ test('10. a correction supplies a value but cannot claim the document printed it
 test('evidence: a value with no field label anywhere on the page is not present', () => {
   const result = assessField({
     field: 'dob', value: '2010-01-15', evidenceText: null,
-    pageText: 'ELECTION COMMISSION OF INDIA\nZKV2498574\nSex: M', source: 'vision'
+    pageText: 'ELECTION COMMISSION OF INDIA\nQWZ8046131\nSex: M', source: 'vision'
   });
   assert.equal(result.status, STATUS.NOT_PRESENT);
   assert.equal(result.reason, 'no_label_for_field_on_page');
@@ -339,7 +339,7 @@ test('evidence: garbage OCR cannot witness absence — the read value stays visi
   // turning correctly read DOBs into "not present" on real documents.
   const garbage = 'xj93 kf0a 02kd 0a9d jf93 kdle 03kd 9dk3 lsdk 300a qwer zxcv';
   const result = assessField({
-    field: 'dob', value: '19/05/2003', evidenceText: '19/05/2003', pageText: garbage, source: 'vision'
+    field: 'dob', value: '14/03/2001', evidenceText: '14/03/2001', pageText: garbage, source: 'vision'
   });
   assert.equal(result.status, STATUS.PRESENT_UNCERTAIN, 'kept visible and re-readable, not erased');
   assert.equal(result.reason, 'no_local_corroboration_available');
@@ -354,7 +354,7 @@ test('evidence: garbage OCR cannot witness absence — the read value stays visi
 });
 
 test('evidence: a checksummed machine-readable source needs no corroboration', () => {
-  const fromQr = assessField({ field: 'dob', value: '07/05/2002', source: 'barcode' });
+  const fromQr = assessField({ field: 'dob', value: '23/11/2000', source: 'barcode' });
   assert.equal(fromQr.status, STATUS.PRESENT_VERIFIED);
   const fromMrz = assessField({ field: 'holder_name', value: 'ASHA DEVI', source: 'mrz' });
   assert.equal(fromMrz.status, STATUS.PRESENT_VERIFIED);
@@ -362,21 +362,21 @@ test('evidence: a checksummed machine-readable source needs no corroboration', (
 
 test('evidence: without page text, a matching evidence snippet is enough', () => {
   const result = assessField({
-    field: 'dob', value: '07/05/2002', evidenceText: 'DOB: 07/05/2002', pageText: null, source: 'vision'
+    field: 'dob', value: '23/11/2000', evidenceText: 'DOB: 23/11/2000', pageText: null, source: 'vision'
   });
   assert.equal(result.status, STATUS.PRESENT_VERIFIED);
 });
 
 test('evidence: a snippet that does not contain the value does not support it', () => {
   const result = assessField({
-    field: 'dob', value: '07/05/2002', evidenceText: 'Date of Birth', pageText: null, source: 'vision'
+    field: 'dob', value: '23/11/2000', evidenceText: 'Date of Birth', pageText: null, source: 'vision'
   });
   assert.notEqual(result.status, STATUS.PRESENT_VERIFIED);
 });
 
 test('evidence: dates match across formats', () => {
   const result = assessField({
-    field: 'dob', value: '2002-05-07', evidenceText: 'DOB: 07/05/2002', pageText: 'DOB: 07/05/2002', source: 'vision'
+    field: 'dob', value: '2000-11-23', evidenceText: 'DOB: 23/11/2000', pageText: 'DOB: 23/11/2000', source: 'vision'
   });
   assert.equal(result.status, STATUS.PRESENT_VERIFIED);
 });

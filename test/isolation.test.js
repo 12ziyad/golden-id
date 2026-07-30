@@ -30,12 +30,12 @@ test.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
 // Two distinct people, each with their own documents.
 const SAKIR = {
-  pan: { document_type: 'pan', holder_name: 'MUHAMMED SAKIR K', father_name: 'RAHEEM KOTTAKANDI', dob: '19/05/2003', document_number: 'MPWPK2241E' },
-  aadhaar: { document_type: 'aadhaar', holder_name: 'MUHAMMED SAKIR K', dob: '19/05/2003', gender: 'Male', document_number: '3204 3976 7873', address: '12 MG ROAD, BENGALURU 560001' }
+  pan: { document_type: 'pan', holder_name: 'MUHAMMED SAKIR K', father_name: 'RAHEEM KOTTAYIL', dob: '14/03/2001', document_number: 'HZVPK5578Q' },
+  aadhaar: { document_type: 'aadhaar', holder_name: 'MUHAMMED SAKIR K', dob: '14/03/2001', gender: 'Male', document_number: '7321 9450 0125', address: '12 MG ROAD, BENGALURU 560001' }
 };
 const MISHAB = {
-  passport: { document_type: 'passport', holder_name: 'MUHAMMED MISHAB SULAIMAN', dob: '02/02/1998', gender: 'M', document_number: 'M7654321' },
-  voter: { document_type: 'voter', holder_name: 'MUHAMMED MISHAB SULAIMAN', dob: '02/02/1998', gender: 'M', document_number: 'XYZ7654321' }
+  passport: { document_type: 'passport', holder_name: 'MUHAMMED MISHAB SALEEM', dob: '02/02/1998', gender: 'M', document_number: 'T4839211' },
+  voter: { document_type: 'voter', holder_name: 'MUHAMMED MISHAB SALEEM', dob: '02/02/1998', gender: 'M', document_number: 'XYZ7654321' }
 };
 
 const sakirFiles = () => Promise.all([
@@ -66,7 +66,7 @@ test("two users on one server never see each other's documents", async () => {
   const serialised = JSON.stringify(comparison);
 
   assert.ok(!serialised.includes('SAKIR'), "Sakir's name leaked into Mishab's comparison");
-  assert.ok(!serialised.includes('MPWPK2241E'), "Sakir's PAN number leaked");
+  assert.ok(!serialised.includes('HZVPK5578Q'), "Sakir's PAN number leaked");
   assert.ok(!serialised.includes('RAHEEM'), "Sakir's father's name leaked");
   assert.equal(comparison.documents.length, 2);
 
@@ -98,7 +98,7 @@ test('the reported reproduction: a second application never inherits the first',
   assert.equal(comparison.documents.length, 2);
   const serialised = JSON.stringify(comparison.verdict);
   assert.ok(!serialised.includes('SAKIR'));
-  assert.ok(!serialised.includes('2003-05-19'), "Sakir's DOB leaked");
+  assert.ok(!serialised.includes('2001-03-14'), "Sakir's DOB leaked");
   cleanup();
 });
 
@@ -201,7 +201,7 @@ test('concurrent applications do not interleave', async () => {
     index,
     user: store.upsertUser(`u${index}@example.com`),
     files: await Promise.all([
-      fixture(`p${index}.jpg`, { ...MISHAB.passport, holder_name: `PERSON ${index}`, document_number: `M765432${index}` }),
+      fixture(`p${index}.jpg`, { ...MISHAB.passport, holder_name: `PERSON ${index}`, document_number: `T483921${index}` }),
       fixture(`v${index}.jpg`, { ...MISHAB.voter, holder_name: `PERSON ${index}`, document_number: `XYZ765432${index}` })
     ])
   })));
